@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Creator Scout</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 360px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: white;
+      color: #111827;
+    }
+
+    .popup-container {
+      padding: 20px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .header h1 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #111827;
+    }
+
+    .logo {
+      width: 24px;
+      height: 24px;
+      background: #6366f1;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .section {
+      margin-bottom: 20px;
+    }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+
+    .stat-box {
+      background: #f3f4f6;
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .stat-number {
+      font-size: 18px;
+      font-weight: 700;
+      color: #111827;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+
+    .info-box {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .info-box p {
+      font-size: 13px;
+      color: #1e40af;
+      line-height: 1.4;
+    }
+
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .btn {
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: #6366f1;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #4f46e5;
+    }
+
+    .btn-secondary {
+      background: #e5e7eb;
+      color: #374151;
+    }
+
+    .btn-secondary:hover {
+      background: #d1d5db;
+    }
+
+    .footer {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid #e5e7eb;
+      font-size: 11px;
+      color: #6b7280;
+      text-align: center;
+    }
+
+    .user-id {
+      padding: 8px 12px;
+      background: #f9fafb;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 11px;
+      color: #6b7280;
+      word-break: break-all;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Setup Section -->
+    <div id="setup-section" style="display: none;">
+      <div class="header">
+        <div class="logo">CS</div>
+        <h1>Creator Scout</h1>
+      </div>
+      <div class="section">
+        <div class="section-title">Welcome!</div>
+        <div class="info-box" style="background: #fef3c7; border: 1px solid #fde68a; margin-bottom: 16px;">
+          <p style="color: #92400e;">Before you can sign in, you need to configure your API URL. This is the Google Apps Script URL from your team lead.</p>
+        </div>
+        <button class="btn btn-primary" id="setup-btn" style="width: 100%; margin-bottom: 8px;">⚙️ Configure API URL</button>
+        <div style="font-size: 11px; color: #6b7280; text-align: center; margin-top: 12px;">
+          <strong>Don't have an API URL?</strong><br>
+          Ask your team lead for the Google Apps Script deployment URL.
+        </div>
+      </div>
+    </div>
+
+    <!-- Login Section -->
+    <div id="login-section" style="display: none;">
+      <div class="header">
+        <div class="logo">CS</div>
+        <h1>Creator Scout</h1>
+      </div>
+      <div class="section">
+        <div class="section-title">Sign In</div>
+        <div style="margin-bottom: 16px;">
+          <label style="display: block; font-weight: 600; margin-bottom: 6px; font-size: 13px;">Your Email</label>
+          <input type="email" id="login-email-input" placeholder="your.email@gmail.com" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; box-sizing: border-box;">
+          <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">Enter your email to get your Scout ID</div>
+        </div>
+        <div id="login-message" style="font-size: 12px; color: #6b7280; margin-bottom: 12px; text-align: center;"></div>
+        <button class="btn btn-primary" id="login-btn" style="width: 100%;">Sign In</button>
+      </div>
+    </div>
+
+    <!-- Dashboard Section -->
+    <div id="dashboard-section" style="display: none;">
+      <div class="header">
+        <div class="logo">CS</div>
+        <h1>Creator Scout</h1>
+      </div>
+
+    <div class="section">
+      <div class="section-title">Your Dashboard</div>
+      <div class="stats">
+        <div class="stat-box">
+          <div class="stat-number" id="stat-new">0</div>
+          <div class="stat-label">New</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-number" id="stat-pending">0</div>
+          <div class="stat-label">Pending</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-number" id="stat-contacted">0</div>
+          <div class="stat-label">Contacted</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Quick Actions</div>
+      <div class="info-box">
+        <p>📍 Open a creator profile on LinkedIn, Twitter/X, or Instagram to get started.</p>
+      </div>
+      <div class="actions">
+        <button class="btn btn-secondary" id="open-dashboard">View All Creators</button>
+        <button class="btn btn-secondary" id="settings">Settings</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Your Scout ID</div>
+      <div style="padding: 12px; background: #f3f4f6; border-radius: 6px;">
+        <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Auto-generated</div>
+        <div style="font-size: 13px; font-weight: 600; color: #111827; word-break: break-all; margin-bottom: 8px; font-family: monospace;" id="scout-id-display"></div>
+        <button class="btn btn-secondary" id="copy-scout-id-btn" style="width: 100%;">📋 Copy ID</button>
+      </div>
+    </div>
+
+      <div class="footer">
+        Creator Scout v1.0 | Made with ❤️
+        <button class="btn btn-secondary" id="logout-btn" style="width: 100%; margin-top: 12px; padding: 8px;">Sign Out</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999; padding: 20px;">
+    <div style="background: white; border-radius: 12px; padding: 20px; max-width: 500px; margin: auto; margin-top: 30px; max-height: 85vh; overflow-y: auto;">
+      <h2 style="margin-top: 0; margin-bottom: 16px; font-size: 18px;">⚙️ Settings</h2>
+
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-weight: 600; margin-bottom: 6px; font-size: 13px;">Your Scout Name</label>
+        <input type="text" id="scout-name-input" placeholder="e.g., John Doe" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; box-sizing: border-box;">
+        <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">Your name or identifier (so team knows who scouted each creator)</div>
+      </div>
+
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-weight: 600; margin-bottom: 6px; font-size: 13px;">Google Apps Script URL</label>
+        <input type="text" id="api-url-input" placeholder="https://script.google.com/macros/s/..." style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; box-sizing: border-box;">
+        <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">Get this from your Google Apps Script deployment</div>
+      </div>
+
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-weight: 600; margin-bottom: 6px; font-size: 13px;">Outreach Message Template</label>
+        <textarea id="message-template-input" placeholder="Hey @{username}! We'd love to collaborate..." style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; box-sizing: border-box; resize: vertical; min-height: 80px; font-family: monospace;"></textarea>
+        <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">Use {username} as placeholder. This message will be copied to clipboard.</div>
+      </div>
+
+      <div id="settings-message" style="font-size: 12px; color: #6b7280; margin-bottom: 12px; text-align: center;"></div>
+
+      <div style="display: flex; gap: 8px;">
+        <button class="btn btn-primary" id="save-settings-btn" style="flex: 1;">Save Settings</button>
+        <button class="btn btn-secondary" id="close-settings-btn" style="flex: 1;">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
