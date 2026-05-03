@@ -1,100 +1,110 @@
 # Creator Scout
 
-Scout and track creators across LinkedIn, Twitter/X, and Instagram from a shared Google Sheet.
-
-## Quick Start (Easiest)
-
-**👉 [Use the Simplified Web Version](README-SIMPLIFIED.md)** 
+Simple, lightweight tool to scout and track creators across LinkedIn, Twitter/X, and Instagram.
 
 - ✅ Works on any device/browser
-- ✅ No extensions needed
-- ✅ One URL for entire team
-- ✅ 5-minute setup
+- ✅ Email-based identity (auto-generates Scout IDs)
+- ✅ Zero setup for employees
+- ✅ Google Sheet as single source of truth
 
 ---
 
-## Features
+## Setup (Team Lead) - 5 Minutes
 
-- **Email-based Scout Identity**: One email = one Scout ID, managed as single source of truth
-- **Sequential Scout IDs**: Auto-generated SCOUT_001, SCOUT_002, etc.
-- **Cross-browser Sync**: Same email gets same Scout ID on any device
-- **Creator Tracking**: Save creators with status (new, pending, contacted)
-- **Works Everywhere**: Web dashboard (any device) + optional Chrome extension
+### 1. Create Google Sheet
+
+Create a new Google Sheet with two sheets:
+
+**Sheet: "Creators"** (Headers in Row 1)
+```
+A: profile_url
+B: platform
+C: username
+D: status
+E: scout_id
+F: follower_count
+G: bio
+H: status_history
+I: created_at
+J: updated_at
+```
+
+**Sheet: "Scouts"** (Headers in Row 1)
+```
+A: email
+B: scout_id
+C: scout_name
+D: last_active
+```
+
+### 2. Deploy to Google Apps Script
+
+1. Go to [script.google.com](https://script.google.com) → New project
+2. Delete default code
+3. Copy all code from `apps-script-backend.gs`
+4. Find line 5: `const SHEET_ID = 'YOUR_SHEET_ID_HERE';`
+5. Replace with your Google Sheet ID (from your sheet URL)
+6. **Save** → **Deploy** → **New Deployment**
+7. Type: **Web app** → Execute as: **Your account** → Allow access: **Anyone**
+8. Copy the deployment URL
+
+### 3. Share with Team
+
+Send team this link (that's it):
+```
+https://script.google.com/macros/s/YOUR_ID/usercontent
+```
 
 ---
 
-## Setup Options
+## Usage (Employee) - 30 Seconds
 
-### Option 1: Web Version (Recommended) ⭐
-
-**For everyone who wants simple, works-everywhere scouting.**
-
-👉 See [README-SIMPLIFIED.md](README-SIMPLIFIED.md)
-
-- Team lead: Create sheet, deploy `apps-script-backend-simple.gs`, share URL
-- Employees: Visit URL, sign in with email, start scouting
-- Works on Windows, Mac, Linux, any browser, phones
+1. Click the link team lead sent
+2. Enter your email → **Sign In**
+3. Get your Scout ID (auto-generated)
+4. **Add Creator**: Paste URL + select platform + enter username → Save
+5. See your creator list
 
 ---
 
-### Option 2: Chrome Extension + Web App
+## Optional: Chrome Extension
 
-**For teams that want quick in-page scouting from social profiles.**
+For faster in-page scouting from social media profiles:
 
-Combines the web dashboard with optional Chrome extension for one-click saving from LinkedIn/Twitter/Instagram.
+1. In Chrome: **Settings** → **Extensions** → Enable **Developer mode**
+2. **Load unpacked** → Select the `extension/` folder
+3. Click extension → **Settings** → Paste deployment URL
+4. Visit creator profiles → Click extension → **Save**
 
-#### Team Lead (One-Time)
+See `extension/` folder for details.
 
-1. **Create Google Sheet** with two sheets:
-   - `Creators` — tracks scouted creators
-   - `Scouts` — tracks scout assignments
+---
 
-   **Scouts sheet columns** (headers in row 1):
-   - A: email
-   - B: scout_id  
-   - C: scout_name
-   - D: last_active
+## File Structure
 
-2. **Deploy Google Apps Script**:
-   - Create new Apps Script project
-   - Copy `apps-script-backend.gs` code
-   - Replace `YOUR_SHEET_ID_HERE` with your Google Sheet ID (from sheet URL)
-   - Deploy as new deployment → get public URL
+```
+creator-scout/
+├── apps-script-backend.gs    (Deploy THIS to Google Apps Script)
+├── README.md                 (You are here)
+├── .gitignore
+└── extension/                (Optional Chrome extension)
+    ├── manifest.json
+    ├── popup.html
+    ├── popup.js
+    ├── background.js
+    └── content.js
+```
 
-3. **Share deployment URL** with team (e.g., `https://script.google.com/macros/s/ABC123.../usercontent`)
+---
 
-#### Employee (Per-Device)
+## Tech Stack
 
-1. **Install extension** in Chrome
-2. **Configure API URL**:
-   - Click extension icon → Settings
-   - Paste Apps Script deployment URL
-   - Click Save
-3. **Sign in** with email → get Scout ID
-4. **Optional**: Set scout name in Settings for team identification
+- **Backend**: Google Apps Script (free, no server needed)
+- **Frontend**: Pure JavaScript + HTML/CSS
+- **Storage**: Google Sheets API
+- **No dependencies**: Works everywhere
 
-#### Usage
-
-1. Visit LinkedIn/Twitter/Instagram creator profile
-2. Click extension popup
-3. Click **💾 Save** to add to shared sheet
-4. Click **✓ Contacted** when you've reached out
-5. Click **📋 Copy** to copy outreach message
-6. Click **💬 Send DM** to open DM interface
-
-## Architecture
-
-- **Backend** (Google Apps Script): Maintains Scout IDs by email, no duplicates possible
-- **Frontend** (Chrome extension): User-configurable API URL, team name, message template
-- **Storage** (Google Sheet): Single source of truth, shared across all users
-
-## Files
-
-- `manifest.json` — Chrome extension configuration
-- `popup.html` / `popup.js` — UI for Settings and Dashboard
-- `content.js` — Profile detection and creator panel injection
-- `background.js` — Service worker lifecycle
-- `apps-script-backend.gs` — Google Apps Script backend
+---
 
 ## License
 
