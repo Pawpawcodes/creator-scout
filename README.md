@@ -2,18 +2,48 @@
 
 Scout and track creators across LinkedIn, Twitter/X, and Instagram from a shared Google Sheet.
 
+## Quick Start (Easiest)
+
+**👉 [Use the Simplified Web Version](README-SIMPLIFIED.md)** 
+
+- ✅ Works on any device/browser
+- ✅ No extensions needed
+- ✅ One URL for entire team
+- ✅ 5-minute setup
+
+---
+
 ## Features
 
 - **Email-based Scout Identity**: One email = one Scout ID, managed as single source of truth
 - **Sequential Scout IDs**: Auto-generated SCOUT_001, SCOUT_002, etc.
 - **Cross-browser Sync**: Same email gets same Scout ID on any device
 - **Creator Tracking**: Save creators with status (new, pending, contacted)
-- **Follower & Bio Extraction**: Auto-captures follower count and bio from profiles
-- **Custom Outreach Templates**: Personalized messages with {username} placeholders
+- **Works Everywhere**: Web dashboard (any device) + optional Chrome extension
 
-## Setup
+---
 
-### Team Lead (One-Time)
+## Setup Options
+
+### Option 1: Web Version (Recommended) ⭐
+
+**For everyone who wants simple, works-everywhere scouting.**
+
+👉 See [README-SIMPLIFIED.md](README-SIMPLIFIED.md)
+
+- Team lead: Create sheet, deploy `apps-script-backend-simple.gs`, share URL
+- Employees: Visit URL, sign in with email, start scouting
+- Works on Windows, Mac, Linux, any browser, phones
+
+---
+
+### Option 2: Chrome Extension + Web App
+
+**For teams that want quick in-page scouting from social profiles.**
+
+Combines the web dashboard with optional Chrome extension for one-click saving from LinkedIn/Twitter/Instagram.
+
+#### Team Lead (One-Time)
 
 1. **Create Google Sheet** with two sheets:
    - `Creators` — tracks scouted creators
@@ -33,7 +63,7 @@ Scout and track creators across LinkedIn, Twitter/X, and Instagram from a shared
 
 3. **Share deployment URL** with team (e.g., `https://script.google.com/macros/s/ABC123.../usercontent`)
 
-### Employee (Per-Device)
+#### Employee (Per-Device)
 
 1. **Install extension** in Chrome
 2. **Configure API URL**:
@@ -43,7 +73,7 @@ Scout and track creators across LinkedIn, Twitter/X, and Instagram from a shared
 3. **Sign in** with email → get Scout ID
 4. **Optional**: Set scout name in Settings for team identification
 
-## Usage
+#### Usage
 
 1. Visit LinkedIn/Twitter/Instagram creator profile
 2. Click extension popup
