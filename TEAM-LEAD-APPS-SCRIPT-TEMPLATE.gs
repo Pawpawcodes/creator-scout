@@ -10,26 +10,20 @@ const SCOUTS_SHEET_NAME = 'Scouts';
 // Cache individual creator row numbers instead of building full index
 // This avoids expensive sheet scans for single lookups
 function getCreatorRowNumber(scoutId, profileUrl) {
-  const cache = CacheService.getScriptCache();
-  const cacheKey = `creator_row_${scoutId}_${profileUrl}`;
-  const cachedRow = cache.get(cacheKey);
+  // RESTORED: Never cache row numbers - they become invalid when earlier rows are deleted!
+  // Always do a fresh lookup from the sheet.
+  // Correctness > Performance
 
-  if (cachedRow && cachedRow !== 'null') {
-    return parseInt(cachedRow);
-  }
-
-  // Cache miss - find row using optimized search
   const { masterSheet } = ensureMasterSheets();
 
-  // Optimization: Only read columns A-B instead of entire row
-  // This is faster than getDataRange().getValues()
   const lastRow = masterSheet.getLastRow();
   if (lastRow <= 1) return null; // No data rows
 
-  const range = masterSheet.getRange(2, 1, lastRow - 1, 2); // Only columns A & B
+  // Read only columns A-B for speed (avoid full row reads)
+  const range = masterSheet.getRange(2, 1, lastRow - 1, 2);
   const data = range.getValues();
 
-  // CRITICAL FIX: Return LATEST matching row (most recent), not first
+  // Find the LATEST matching row (return last match, not first)
   // If duplicate rows exist, the newest one is at the bottom
   let lastMatchingRow = null;
   for (let i = 0; i < data.length; i++) {
@@ -38,15 +32,7 @@ function getCreatorRowNumber(scoutId, profileUrl) {
     }
   }
 
-  if (lastMatchingRow) {
-    // Cache the row number for 24 hours
-    cache.put(cacheKey, lastMatchingRow.toString(), 86400);
-    return lastMatchingRow;
-  }
-
-  // Not found - cache null for 24 hours to avoid repeated searches
-  cache.put(cacheKey, 'null', 86400);
-  return null;
+  return lastMatchingRow;
 }
 
 // Invalidate creator row reference when scout's data changes
@@ -295,64 +281,43 @@ function handleGetCreatorStatus(email, profile_url) {
   }
 
   try {
+    const { masterSheet } = ensureMasterSheets();
     const scoutId = getScoutId(email);
+
     if (!scoutId) {
       return { error: 'Scout not found', status: null };
     }
 
-    // CRITICAL: ALWAYS read fresh from sheet for status restoration
-    // Do NOT use cached row numbers - they become invalid when rows are deleted
-    // Correctness > Performance: Always do a fresh lookup
-    const { masterSheet } = ensureMasterSheets();
-    const lastRow = masterSheet.getLastRow();
+    // RESTORED: Pure simple logic from original working version
+    // Always read fresh from sheet, no caching to avoid stale data
+    const data = masterSheet.getDataRange().getValues();
 
-    if (lastRow <= 1) {
-      // No data rows
-      return { status: null, found: false, lock_in_price: null };
-    }
+    // Find the LATEST matching row (in case of duplicates from past bugs)
+    let foundRow = null;
+    let foundRowNum = null;
 
-    // Fresh lookup: Read only columns A-B to find the current row
-    const range = masterSheet.getRange(2, 1, lastRow - 1, 2);
-    const data = range.getValues();
-
-    // Find the LATEST matching row (in case of duplicates)
-    let foundRowNumber = null;
-    for (let i = 0; i < data.length; i++) {
+    for (let i = 1; i < data.length; i++) {
       if (data[i][0] === scoutId && data[i][1] === profile_url) {
-        foundRowNumber = i + 2; // Row numbers start at 1, data starts at row 2
+        foundRow = data[i];
+        foundRowNum = i;
       }
     }
 
-    if (!foundRowNumber) {
-      // Creator not found in sheet
+    if (!foundRow) {
       return { status: null, found: false, lock_in_price: null };
     }
 
-    // Read the full row to get status and lock-in price
-    const row = masterSheet.getRange(foundRowNumber, 1, 1, 8).getValues()[0];
+    // Return the status from column E (index 4)
+    // CRITICAL: Do NOT default to 'saved' when status column is empty
+    const creatorStatus = (foundRow[4] || '').toString();
+    const lockInPrice = (foundRow[7] || null);
 
-    // Double-check the row matches (defensive check)
-    const rowScoutId = row[0];
-    const rowProfileUrl = row[1];
-
-    if (rowScoutId !== scoutId || rowProfileUrl !== profile_url) {
-      // Row data doesn't match - something is wrong
-      return { status: null, found: false, lock_in_price: null };
-    }
-
-    // Extract status from column E (index 4)
-    // CRITICAL: Do NOT default to 'saved' - that masks deleted records
-    const statusValue = row[4];
-    const creatorStatus = statusValue ? statusValue.toString() : null;
-    const lockInPrice = (row[7] || null);
-
-    // If no status found, creator is incomplete or corrupted
     if (!creatorStatus) {
+      // Empty status = not a valid creator record
       return { status: null, found: false, lock_in_price: null };
     }
 
-    const result = { status: creatorStatus, found: true, lock_in_price: lockInPrice };
-    return result;
+    return { status: creatorStatus, found: true, lock_in_price: lockInPrice };
   } catch (error) {
     return { error: error.toString(), status: null, lock_in_price: null };
   }
@@ -384,11 +349,10 @@ function handleUpdateCreatorStatus(email, profile_url, new_status, personalSheet
     masterSheet.getRange(foundRow, 5).setValue(new_status);
     masterSheet.getRange(foundRow, 7).setValue(new Date().toISOString());
 
-    // CRITICAL: Invalidate ALL caches for this creator
+    // CRITICAL: Invalidate status cache for this creator
     const cache = CacheService.getScriptCache();
     cache.remove(`creator_${scoutId}_${profile_url}`); // Status cache
-    cache.remove(`creator_row_${scoutId}_${profile_url}`); // Row number cache - MUST invalidate this!
-    invalidateCreatorIndex(scoutId);
+    // Note: Row number caching is DISABLED - fresh lookup always done
 
     // Update personal sheet if provided
     if (personalSheetId) {
@@ -435,11 +399,10 @@ function handleLockInPrice(email, profile_url, price, personalSheetId) {
 
     masterSheet.getRange(foundRow, 8).setValue(price);
 
-    // CRITICAL: Invalidate ALL caches for this creator
+    // CRITICAL: Invalidate status cache for this creator
     const cache = CacheService.getScriptCache();
     cache.remove(`creator_${scoutId}_${profile_url}`); // Status cache
-    cache.remove(`creator_row_${scoutId}_${profile_url}`); // Row number cache
-    invalidateCreatorIndex(scoutId);
+    // Note: Row number caching is DISABLED - fresh lookup always done
 
     // Update personal sheet if provided - Lock-In Price is column 7 (index 6)
     if (personalSheetId) {
