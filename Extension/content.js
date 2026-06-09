@@ -1854,14 +1854,16 @@ function checkAndShowWidget() {
           btn.title = titleText;
         }
 
-        // DO NOT cache status for restoration - always fetch fresh from GAS
-        // Cache is only used for lock-in price and optimistic updates
-        // Correctness is more important than cache hits
-        chrome.storage.local.get(['CREATOR_LOCK_IN_PRICE_CACHE'], (res) => {
+        // Update cache and localStorage with CONFIRMED status from GAS
+        // This is for future loads, but UI is already updated from GAS
+        chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (res) => {
+          const cachedStatus = res.CREATOR_STATUS_CACHE || {};
           const cachedPrices = res.CREATOR_LOCK_IN_PRICE_CACHE || {};
 
-          // Only cache lock-in price, NOT status
-          // Status must always come from GAS for correctness
+          // Update cache with confirmed status from GAS (source of truth)
+          cachedStatus[profileKey] = { status: newStatus, found: true };
+
+          // Update or clear lock-in price based on GAS response
           if (lockInPrice) {
             cachedPrices[profileKey] = lockInPrice;
           } else {
@@ -1869,9 +1871,19 @@ function checkAndShowWidget() {
           }
 
           chrome.storage.local.set({
+            CREATOR_STATUS_CACHE: cachedStatus,
             CREATOR_LOCK_IN_PRICE_CACHE: cachedPrices
           });
+
+          console.log('[Creator Scout] Cache updated with GAS response:', {
+            profileUrl: profileKey,
+            status: newStatus,
+            price: lockInPrice
+          });
         });
+
+        // Update localStorage with confirmed status for persistence across pages
+        localStorage.setItem(`scout_status_${profileKey}`, newStatus);
       })
       .catch(error => {
         clearTimeout(fetchTimeout);
@@ -1969,9 +1981,12 @@ function checkAndShowWidget() {
               btn.title = titleText;
             }
 
-            // DO NOT cache status for restoration - only cache lock-in price
-            chrome.storage.local.get(['CREATOR_LOCK_IN_PRICE_CACHE'], (res) => {
+            // Update cache with confirmed status from GAS
+            chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (res) => {
+              const cachedStatus = res.CREATOR_STATUS_CACHE || {};
               const cachedPrices = res.CREATOR_LOCK_IN_PRICE_CACHE || {};
+
+              cachedStatus[fallbackProfileKey] = { status: fallbackStatus, found: true };
 
               if (fallbackPrice) {
                 cachedPrices[fallbackProfileKey] = fallbackPrice;
@@ -1980,9 +1995,12 @@ function checkAndShowWidget() {
               }
 
               chrome.storage.local.set({
+                CREATOR_STATUS_CACHE: cachedStatus,
                 CREATOR_LOCK_IN_PRICE_CACHE: cachedPrices
               });
             });
+
+            localStorage.setItem(`scout_status_${fallbackProfileKey}`, fallbackStatus);
           }
         })
         .catch(e => {
