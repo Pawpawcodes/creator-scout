@@ -1186,10 +1186,11 @@ async function handleSaveCreator(status = 'saved') {
     }
 
     // 6. Update cache immediately (before GAS sync)
+    // Store both status and found flag to prevent stale cache flashing
     if (currentCreatorData && currentCreatorData.profile_url) {
       chrome.storage.local.get(['CREATOR_STATUS_CACHE'], (result) => {
         const cachedStatus = result.CREATOR_STATUS_CACHE || {};
-        cachedStatus[currentCreatorData.profile_url] = status;
+        cachedStatus[currentCreatorData.profile_url] = { status: status, found: true };
         chrome.storage.local.set({ CREATOR_STATUS_CACHE: cachedStatus });
       });
     }
@@ -1249,7 +1250,9 @@ async function handleSaveCreator(status = 'saved') {
         if (currentCreatorData && currentCreatorData.profile_url) {
           chrome.storage.local.get(['CREATOR_STATUS_CACHE'], (result) => {
             const cachedStatus = result.CREATOR_STATUS_CACHE || {};
-            cachedStatus[currentCreatorData.profile_url] = previousStatus;
+            // Revert to previous cache entry format
+            // If previousStatus was stored in new format, restore with found flag
+            cachedStatus[currentCreatorData.profile_url] = { status: previousStatus, found: true };
             chrome.storage.local.set({ CREATOR_STATUS_CACHE: cachedStatus });
           });
         }
@@ -1651,11 +1654,24 @@ function checkAndShowWidget() {
       const cachedPrices = result.CREATOR_LOCK_IN_PRICE_CACHE || {};
       const profileKey = creatorData.profile_url;
 
-      if (cachedStatus[profileKey]) {
-        hasCachedData = true;
-        window.__scoutWidgetStatus = cachedStatus[profileKey];
-        currentStatus = cachedStatus[profileKey];
-        updateButtonStatus(window.__scoutWidgetStatus);
+      // FIX: Only show cached status if it's marked as valid (found=true)
+      // This prevents showing stale status for deleted creators
+      const cachedEntry = cachedStatus[profileKey];
+      if (cachedEntry) {
+        // Handle both old format (string) and new format (object with found flag)
+        const isCacheValid = typeof cachedEntry === 'string'
+          ? true // Old format - assume valid
+          : cachedEntry.found !== false; // New format - check found flag
+
+        if (isCacheValid) {
+          hasCachedData = true;
+          const statusValue = typeof cachedEntry === 'string'
+            ? cachedEntry
+            : cachedEntry.status;
+          window.__scoutWidgetStatus = statusValue;
+          currentStatus = statusValue;
+          updateButtonStatus(window.__scoutWidgetStatus);
+        }
       }
 
       // Cache price for later use
@@ -1708,20 +1724,22 @@ function checkAndShowWidget() {
         window.__scoutWidgetStatus = newStatus;
         currentStatus = newStatus;
 
-        // Update cache - but clear if creator not found in sheets (was deleted)
+        // FIX: Update cache with found flag to prevent stale status flashing
+        // Store both status and found flag so we know if cached entry is still valid
         chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (res) => {
           const cachedStatus = res.CREATOR_STATUS_CACHE || {};
           const cachedPrices = res.CREATOR_LOCK_IN_PRICE_CACHE || {};
           const profileUrl = creatorData.profile_url;
 
-          // If creator not found in sheets, clear stale cache for this creator
+          // If creator not found in sheets, mark as deleted in cache
           if (result && result.found === false) {
-            delete cachedStatus[profileUrl];
+            // Store found=false so we never show this stale status again
+            cachedStatus[profileUrl] = { status: null, found: false };
             delete cachedPrices[profileUrl];
             window.__scoutWidgetPrice = null;
           } else {
-            // Creator exists in sheets - update with latest data
-            cachedStatus[profileUrl] = newStatus;
+            // Creator exists in sheets - update with latest data and mark as valid
+            cachedStatus[profileUrl] = { status: newStatus, found: true };
 
             // LOCK-IN PRICE: Cache price if returned from GAS
             if (result && result.lock_in_price) {

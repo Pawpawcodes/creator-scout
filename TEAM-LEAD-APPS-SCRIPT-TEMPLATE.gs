@@ -180,6 +180,14 @@ function validateScoutEmail(email) {
 
 function getScoutId(email) {
   try {
+    const cache = CacheService.getScriptCache();
+    const cacheKey = `scout_id_${email.trim().toLowerCase()}`;
+    const cachedId = cache.get(cacheKey);
+
+    if (cachedId) {
+      return cachedId;
+    }
+
     const { scoutsSheet } = ensureMasterSheets();
     const data = scoutsSheet.getDataRange().getValues();
     const normalizedEmail = email.trim().toLowerCase();
@@ -187,7 +195,10 @@ function getScoutId(email) {
     for (let i = 1; i < data.length; i++) {
       const sheetEmail = (data[i][1] || '').toString().trim().toLowerCase();
       if (sheetEmail === normalizedEmail) {
-        return data[i][0];
+        const scoutId = data[i][0];
+        // Cache the scout ID for 24 hours
+        cache.put(cacheKey, scoutId, 86400);
+        return scoutId;
       }
     }
     return null;
