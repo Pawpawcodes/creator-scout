@@ -1768,6 +1768,11 @@ function checkAndShowWidget() {
         // If creator is not found in sheets, clear stale cache
         if (result && result.found === false) {
           // Creator was deleted - clear all cached data
+          console.log('[Creator Scout] Creator deleted - clearing stale cache:', {
+            profileUrl: profileKey,
+            gasResult: result
+          });
+
           chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (cacheRes) => {
             const cachedStatus = cacheRes.CREATOR_STATUS_CACHE || {};
             const cachedPrices = cacheRes.CREATOR_LOCK_IN_PRICE_CACHE || {};
@@ -1798,6 +1803,13 @@ function checkAndShowWidget() {
         if (result && result.status) {
           newStatus = result.status;
         }
+
+        console.log('[Creator Scout] Status lookup from GAS:', {
+          profileUrl: profileKey,
+          status: newStatus,
+          lockInPrice: result?.lock_in_price,
+          found: result?.found
+        });
 
         // Update UI with confirmed status (no intermediate states)
         window.__scoutWidgetStatus = newStatus;
@@ -1886,6 +1898,12 @@ function checkAndShowWidget() {
           }
 
           if (result && result.status) {
+            console.log('[Creator Scout] Fallback status lookup:', {
+              profileUrl: syncData.profile_url,
+              status: result.status,
+              lockInPrice: result.lock_in_price
+            });
+
             window.__scoutWidgetStatus = result.status;
             currentStatus = result.status;
             updateButtonStatus(result.status);

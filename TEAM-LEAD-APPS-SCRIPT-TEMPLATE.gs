@@ -14,7 +14,7 @@ function getCreatorRowNumber(scoutId, profileUrl) {
   const cacheKey = `creator_row_${scoutId}_${profileUrl}`;
   const cachedRow = cache.get(cacheKey);
 
-  if (cachedRow) {
+  if (cachedRow && cachedRow !== 'null') {
     return parseInt(cachedRow);
   }
 
@@ -29,13 +29,19 @@ function getCreatorRowNumber(scoutId, profileUrl) {
   const range = masterSheet.getRange(2, 1, lastRow - 1, 2); // Only columns A & B
   const data = range.getValues();
 
+  // CRITICAL FIX: Return LATEST matching row (most recent), not first
+  // If duplicate rows exist, the newest one is at the bottom
+  let lastMatchingRow = null;
   for (let i = 0; i < data.length; i++) {
     if (data[i][0] === scoutId && data[i][1] === profileUrl) {
-      const rowNumber = i + 2; // Row numbers start at 1, data starts at row 2
-      // Cache the row number for 24 hours
-      cache.put(cacheKey, rowNumber.toString(), 86400);
-      return rowNumber;
+      lastMatchingRow = i + 2; // Row numbers start at 1, data starts at row 2
     }
+  }
+
+  if (lastMatchingRow) {
+    // Cache the row number for 24 hours
+    cache.put(cacheKey, lastMatchingRow.toString(), 86400);
+    return lastMatchingRow;
   }
 
   // Not found - cache null for 24 hours to avoid repeated searches
@@ -304,6 +310,7 @@ function handleGetCreatorStatus(email, profile_url) {
       const result = JSON.parse(cachedResult);
       // Only use cache if creator was found (avoid stale "not found" results)
       if (result.found !== false) {
+        Logger.log(`[getCreatorStatus] Cache HIT for ${scoutId} | ${profile_url} | status: ${result.status}`);
         return result;
       }
       // Cache says "not found" - force a fresh check to catch newly saved creators
@@ -311,10 +318,12 @@ function handleGetCreatorStatus(email, profile_url) {
 
     // Cache miss or stale "not found" - use targeted row lookup (avoids expensive full sheet scan)
     const rowNumber = getCreatorRowNumber(scoutId, profile_url);
+    Logger.log(`[getCreatorStatus] Lookup ${scoutId} | ${profile_url} | rowNumber: ${rowNumber}`);
 
     if (!rowNumber) {
       // Creator not found - DO NOT CACHE this result (prevents cache pollution)
       // On next call, we'll check the sheet again in case it was just saved
+      Logger.log(`[getCreatorStatus] NOT FOUND: ${scoutId} | ${profile_url}`);
       return { status: null, found: false, lock_in_price: null };
     }
 
@@ -324,6 +333,8 @@ function handleGetCreatorStatus(email, profile_url) {
     const creatorStatus = (row[4] || 'saved').toString();
     const lockInPrice = (row[7] || null);
     const result = { status: creatorStatus, found: true, lock_in_price: lockInPrice };
+
+    Logger.log(`[getCreatorStatus] FOUND row ${rowNumber}: status=${creatorStatus}, price=${lockInPrice}`);
 
     // Cache the result for 6 hours
     cache.put(cacheKey, JSON.stringify(result), 21600);
