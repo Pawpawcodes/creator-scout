@@ -1683,6 +1683,9 @@ function checkAndShowWidget() {
           newStatus = result.status;
         }
 
+        // PHASE 2: Only update UI if status actually changed (avoid flicker)
+        const statusChanged = newStatus !== window.__scoutWidgetStatus;
+
         window.__scoutWidgetStatus = newStatus;
         currentStatus = newStatus;
 
@@ -1718,7 +1721,10 @@ function checkAndShowWidget() {
           });
         });
 
-        updateButtonStatus(window.__scoutWidgetStatus);
+        // Only re-render if status changed from what was cached
+        if (statusChanged) {
+          updateButtonStatus(window.__scoutWidgetStatus);
+        }
       })
       .catch(error => {
         clearTimeout(fetchTimeout);
@@ -1754,9 +1760,12 @@ function checkAndShowWidget() {
         .then(result => {
           clearTimeout(fallbackTimeout);
           if (result && result.status) {
+            const statusChanged = result.status !== window.__scoutWidgetStatus;
             window.__scoutWidgetStatus = result.status;
             currentStatus = result.status;
-            updateButtonStatus(result.status);
+            if (statusChanged) {
+              updateButtonStatus(result.status);
+            }
           }
         })
         .catch(e => {
