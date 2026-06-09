@@ -1765,50 +1765,51 @@ function checkAndShowWidget() {
         removeLoadingStatus();
 
         // CRITICAL FIX: Handle deleted creators
-        // If creator is not found in sheets, IMMEDIATELY clear ALL stale caches
-        // Do this SYNCHRONOUSLY before showing any status to prevent displaying deleted data
+        // If creator is not found in sheets, FORCE COMPLETE UI RESET to 'new'
+        // Do not just update classes - completely reset the widget state
         if (result && result.found === false) {
-          // Creator was deleted - clear all cached data IMMEDIATELY
-          console.log('[Creator Scout] Creator deleted - clearing ALL stale caches:', {
-            profileUrl: profileKey,
-            gasResult: result
-          });
-
-          // 1. Clear localStorage immediately (synchronous)
+          // Creator was deleted - IMMEDIATELY clear ALL state and caches
           localStorage.removeItem(`scout_status_${profileKey}`);
 
-          // 2. Clear chrome.storage immediately (synchronous from extension perspective)
           chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (cacheRes) => {
             const cachedStatus = cacheRes.CREATOR_STATUS_CACHE || {};
             const cachedPrices = cacheRes.CREATOR_LOCK_IN_PRICE_CACHE || {};
-
-            // Remove stale status and price for this creator
             delete cachedStatus[profileKey];
             delete cachedPrices[profileKey];
-
-            // Apply changes immediately
             chrome.storage.local.set({
               CREATOR_STATUS_CACHE: cachedStatus,
               CREATOR_LOCK_IN_PRICE_CACHE: cachedPrices
             });
-
-            console.log('[Creator Scout] Cache cleared for deleted creator:', {
-              profileUrl: profileKey,
-              remainingStatuses: Object.keys(cachedStatus).length,
-              remainingPrices: Object.keys(cachedPrices).length
-            });
           });
 
-          // 3. Update UI to show 'new' (creator does not exist)
+          // FORCE COMPLETE UI RESET - not just button update
           window.__scoutWidgetStatus = 'new';
           currentStatus = 'new';
           window.__scoutWidgetPrice = null;
 
-          // 4. Remove loading state and show 'new' status
-          removeLoadingStatus();
-          updateButtonStatus('new');
+          // Get the button and COMPLETELY RESET it
+          const btn = document.querySelector('.scout-floating-button');
+          if (btn) {
+            // Remove ALL status classes and loading class
+            btn.classList.remove('scout-loading', 'status-new', 'status-saved', 'status-hold', 'status-locked_in', 'status-error', 'status-loading');
+            // Add ONLY the new status class
+            btn.classList.add('status-new');
+            // Reset text
+            const textEl = btn.querySelector('.scout-button-text');
+            if (textEl) {
+              textEl.textContent = 'Scout';
+            }
+            // Reset title
+            btn.title = 'Scout Creator';
+          }
 
-          console.log('[Creator Scout] Deleted creator now shows as new:', profileKey);
+          // Close any open popup
+          const popup = document.getElementById('scout-widget-popup');
+          if (popup) {
+            popup.classList.remove('scout-popup-open');
+            setTimeout(() => popup.remove(), 200);
+          }
+
           return;
         }
 
@@ -1817,21 +1818,27 @@ function checkAndShowWidget() {
         let newStatus = result?.status || 'new';
         const lockInPrice = result?.lock_in_price || null;
 
-        console.log('[Creator Scout] Status CONFIRMED from GAS (source of truth):', {
-          profileUrl: profileKey,
-          status: newStatus,
-          lockInPrice: lockInPrice,
-          found: result?.found
-        });
-
-        // Update UI with confirmed status (no intermediate states, no cache)
+        // FORCE COMPLETE UI UPDATE - reset all state and apply GAS response
         window.__scoutWidgetStatus = newStatus;
         currentStatus = newStatus;
         window.__scoutWidgetPrice = lockInPrice;
 
-        // Remove loading and show actual status
-        removeLoadingStatus();
-        updateButtonStatus(window.__scoutWidgetStatus);
+        // Get the button and COMPLETELY RESET it with new status
+        const btn = document.querySelector('.scout-floating-button');
+        if (btn) {
+          // Remove ALL old status classes and loading class
+          btn.classList.remove('scout-loading', 'status-new', 'status-saved', 'status-hold', 'status-locked_in', 'status-error', 'status-loading');
+          // Add ONLY the correct status class
+          btn.classList.add(`status-${newStatus}`);
+          // Reset text
+          const textEl = btn.querySelector('.scout-button-text');
+          if (textEl) {
+            textEl.textContent = 'Scout';
+          }
+          // Update title based on status
+          const titleText = newStatus === 'saved' ? 'Creator Already Saved' : newStatus === 'hold' ? 'Creator On Hold' : newStatus === 'locked_in' ? 'Creator Locked In' : 'Scout Creator';
+          btn.title = titleText;
+        }
 
         // Update cache and localStorage with CONFIRMED status from GAS
         // This is for future loads, but UI is already updated from GAS
@@ -1898,9 +1905,11 @@ function checkAndShowWidget() {
         .then(result => {
           clearTimeout(fallbackTimeout);
 
-          // Handle deleted creators
+          // Handle deleted creators - FORCE COMPLETE UI RESET
           if (result && result.found === false) {
             const fallbackProfileKey = syncData.profile_url;
+            localStorage.removeItem(`scout_status_${fallbackProfileKey}`);
+
             chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (cacheRes) => {
               const cachedStatus = cacheRes.CREATOR_STATUS_CACHE || {};
               const cachedPrices = cacheRes.CREATOR_LOCK_IN_PRICE_CACHE || {};
@@ -1911,11 +1920,28 @@ function checkAndShowWidget() {
                 CREATOR_LOCK_IN_PRICE_CACHE: cachedPrices
               });
             });
-            localStorage.removeItem(`scout_status_${fallbackProfileKey}`);
+
             window.__scoutWidgetStatus = 'new';
             currentStatus = 'new';
             window.__scoutWidgetPrice = null;
-            updateButtonStatus('new');
+
+            const btn = document.querySelector('.scout-floating-button');
+            if (btn) {
+              btn.classList.remove('scout-loading', 'status-new', 'status-saved', 'status-hold', 'status-locked_in', 'status-error', 'status-loading');
+              btn.classList.add('status-new');
+              const textEl = btn.querySelector('.scout-button-text');
+              if (textEl) {
+                textEl.textContent = 'Scout';
+              }
+              btn.title = 'Scout Creator';
+            }
+
+            const popup = document.getElementById('scout-widget-popup');
+            if (popup) {
+              popup.classList.remove('scout-popup-open');
+              setTimeout(() => popup.remove(), 200);
+            }
+
             return;
           }
 
@@ -1924,17 +1950,22 @@ function checkAndShowWidget() {
             const fallbackStatus = result.status;
             const fallbackPrice = result.lock_in_price || null;
 
-            console.log('[Creator Scout] Fallback status CONFIRMED from GAS:', {
-              profileUrl: fallbackProfileKey,
-              status: fallbackStatus,
-              lockInPrice: fallbackPrice
-            });
-
-            // Update UI immediately with confirmed status
+            // FORCE COMPLETE UI UPDATE - reset all state and apply GAS response
             window.__scoutWidgetStatus = fallbackStatus;
             currentStatus = fallbackStatus;
             window.__scoutWidgetPrice = fallbackPrice;
-            updateButtonStatus(fallbackStatus);
+
+            const btn = document.querySelector('.scout-floating-button');
+            if (btn) {
+              btn.classList.remove('scout-loading', 'status-new', 'status-saved', 'status-hold', 'status-locked_in', 'status-error', 'status-loading');
+              btn.classList.add(`status-${fallbackStatus}`);
+              const textEl = btn.querySelector('.scout-button-text');
+              if (textEl) {
+                textEl.textContent = 'Scout';
+              }
+              const titleText = fallbackStatus === 'saved' ? 'Creator Already Saved' : fallbackStatus === 'hold' ? 'Creator On Hold' : fallbackStatus === 'locked_in' ? 'Creator Locked In' : 'Scout Creator';
+              btn.title = titleText;
+            }
 
             // Update cache with confirmed status from GAS
             chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (res) => {
