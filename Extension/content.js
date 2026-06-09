@@ -1682,12 +1682,26 @@ function showSaveMessage(text, type) {
 
 // Check creator status and show floating button (instant shell rendering)
 function checkAndShowWidget() {
+  // CRITICAL FIX: Check if profile has CHANGED
+  // If URL changed but widget still exists, we must re-fetch status (not use stale widget)
+  const currentUrl = window.location.href;
+  const profileChanged = currentUrl !== lastProfileUrl;
+
   // Check if widget already exists (singleton pattern)
-  if (ensureSingletonWidget()) {
-    // Widget already mounted, just ensure it's visible
+  if (ensureSingletonWidget() && !profileChanged) {
+    // Widget already mounted for SAME profile, just ensure it's visible
     widgetInstance.style.display = 'flex';
     return;
   }
+
+  // Profile changed or widget doesn't exist - remove old widget and fetch new status
+  if (profileChanged && widgetInstance) {
+    widgetInstance.remove();
+    widgetInstance = null;
+  }
+
+  // Update lastProfileUrl so next check knows current profile
+  lastProfileUrl = currentUrl;
 
   // Fast path: Check if configured using cached settings (no blocking await)
   if (!cachedSettings.SCOUT_EMAIL || !cachedSettings.GAS_URL || !cachedSettings.PERSONAL_SHEET_ID) {
