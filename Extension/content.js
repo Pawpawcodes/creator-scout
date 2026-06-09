@@ -606,6 +606,25 @@ let currentCreatorData = null;
 let lastFetchedStatus = null;
 let currentStatus = null;
 
+// CRITICAL: Validate that currentStatus is always a string
+function setCurrentStatus(value) {
+  const validStatuses = ['new', 'saved', 'hold', 'locked_in', 'loading', 'error'];
+
+  if (typeof value === 'string' && validStatuses.includes(value)) {
+    currentStatus = value;
+  } else if (typeof value === 'object' && value !== null && typeof value.status === 'string') {
+    // If an object with status property is passed, extract the string
+    console.warn('[Scout] setCurrentStatus received object instead of string:', value, '- extracting status property');
+    currentStatus = value.status;
+  } else {
+    // Default to 'new' for any invalid value
+    console.warn('[Scout] setCurrentStatus received invalid value:', value, '- defaulting to new');
+    currentStatus = 'new';
+  }
+
+  console.log('[Scout] currentStatus is now:', currentStatus);
+}
+
 // Prevent async race conditions: invalidate old responses when profile changes
 let activeProfileRequestId = 0;
 
@@ -891,11 +910,27 @@ function updateButtonStatus(status) {
   const btn = document.querySelector('.scout-floating-button');
   if (!btn) return;
 
+  // CRITICAL FIX: Ensure status is always a string
+  if (typeof status !== 'string') {
+    console.warn('[Scout] updateButtonStatus received non-string status:', status, '- defaulting to new');
+    status = 'new';
+  }
+
+  // Remove ALL status classes before adding the new one
   btn.classList.remove('status-new', 'status-saved', 'status-error', 'status-hold', 'status-locked_in', 'status-loading');
   btn.classList.add(`status-${status}`);
   window.__scoutWidgetStatus = status;
 
-  const titleText = status === 'saved' ? 'Creator Already Saved' : 'Scout Creator';
+  // Update title text for ALL status states
+  const titles = {
+    'saved': 'Creator Already Saved',
+    'hold': 'Creator On Hold',
+    'locked_in': 'Creator Locked In',
+    'loading': 'Loading...',
+    'error': 'Error',
+    'new': 'Scout Creator'
+  };
+  const titleText = titles[status] || 'Scout Creator';
   btn.title = titleText;
 }
 
@@ -1115,7 +1150,7 @@ async function handleSaveCreator(status = 'saved') {
     const url = new URL(stored.GAS_URL);
     // CRITICAL FIX: Ensure currentStatus is properly set
     if (!currentStatus || currentStatus === 'loading') {
-      currentStatus = 'new';
+      setCurrentStatus('new');
     }
     const isNewCreator = currentStatus === 'new';
     const action = isNewCreator ? 'saveCreator' : 'updateCreatorStatus';
@@ -1187,7 +1222,7 @@ async function handleSaveCreator(status = 'saved') {
     });
 
     // 5. Sync local runtime state immediately
-    currentStatus = status;
+    setCurrentStatus(status);
     if (currentCreatorData) {
       currentCreatorData.status = status;
     }
@@ -1251,7 +1286,7 @@ async function handleSaveCreator(status = 'saved') {
                 error: verifyResult.error
               });
               // Revert optimistic state since creator doesn't actually exist
-              currentStatus = previousStatus;
+              setCurrentStatus(previousStatus);
               window.__scoutWidgetStatus = previousStatus;
               updateButtonStatus(previousStatus);
               // CRITICAL: Clear the persistent status so next attempt starts fresh
@@ -1291,7 +1326,7 @@ async function handleSaveCreator(status = 'saved') {
                 // Update UI if status differs from optimistic update
                 if (verifyResult.status !== status) {
                   window.__scoutWidgetStatus = verifyResult.status;
-                  currentStatus = verifyResult.status;
+                  setCurrentStatus(verifyResult.status);
                   updateButtonStatus(verifyResult.status);
                 }
               });
@@ -1335,7 +1370,7 @@ async function handleSaveCreator(status = 'saved') {
         }
 
         // Revert cache
-        currentStatus = previousStatus;
+        setCurrentStatus(previousStatus);
         if (currentCreatorData && currentCreatorData.profile_url) {
           chrome.storage.local.get(['CREATOR_STATUS_CACHE'], (result) => {
             const cachedStatus = result.CREATOR_STATUS_CACHE || {};
@@ -1716,7 +1751,7 @@ function checkAndShowWidget() {
   // INSTANT: Mount empty widget shell immediately (~0ms)
   // Show 'loading' status initially so user sees purple loading state, not blue
   window.__scoutWidgetStatus = 'loading';
-  currentStatus = 'new'; // Track actual status internally (new until we get response from GAS)
+  setCurrentStatus('new'); // Track actual status internally (new until we get response from GAS)
   window.__scoutWidgetPrice = null;
   createFloatingButton();
   widgetInstance = getExistingWidget();
@@ -1798,7 +1833,7 @@ function checkAndShowWidget() {
 
           // FORCE COMPLETE UI RESET - not just button update
           window.__scoutWidgetStatus = 'new';
-          currentStatus = 'new';
+          setCurrentStatus('new');
           window.__scoutWidgetPrice = null;
 
           // Get the button and COMPLETELY RESET it
@@ -1834,7 +1869,7 @@ function checkAndShowWidget() {
 
         // FORCE COMPLETE UI UPDATE - reset all state and apply GAS response
         window.__scoutWidgetStatus = newStatus;
-        currentStatus = newStatus;
+        setCurrentStatus(newStatus);
         window.__scoutWidgetPrice = lockInPrice;
 
         // Get the button and COMPLETELY RESET it with new status
@@ -2068,37 +2103,51 @@ function updateWidgetStatus(statusData) {
 
   console.log('[Scout] updateWidgetStatus called with:', statusData);
 
-  // Handle new format: { status: 'loading' | 'new' | 'saved' }
-  if (statusData && statusData.status) {
-    window.__scoutWidgetStatus = statusData.status;
-    if (statusData.status !== 'loading') {
-      currentStatus = statusData.status;
-    }
-    console.log('[Scout] Widget status set to:', statusData.status);
-    if (statusData.status === 'loading') {
-      console.log('[Scout] Showing loading status');
-      showLoadingStatus();
-    } else {
-      console.log('[Scout] Removing loading status');
-      removeLoadingStatus();
-    }
-    updateButtonStatus(window.__scoutWidgetStatus);
+  // CRITICAL FIX: Ensure we extract the status string, never assign objects
+  let statusString = null;
+
+  // Handle format: { status: 'loading' | 'new' | 'saved' | 'hold' | 'locked_in' }
+  if (statusData && typeof statusData.status === 'string') {
+    statusString = statusData.status;
   }
   // Handle old format: { exists: boolean }
   else if (statusData && statusData.hasOwnProperty('exists')) {
-    window.__scoutWidgetStatus = statusData.exists ? 'saved' : 'new';
-    currentStatus = window.__scoutWidgetStatus;
-    console.log('[Scout] Widget status set to (old format):', window.__scoutWidgetStatus);
-    updateButtonStatus(window.__scoutWidgetStatus);
+    statusString = statusData.exists ? 'saved' : 'new';
   }
-  // CRITICAL FIX: Default to 'new' if response format is unexpected
+  // Invalid format - default to 'new'
   else {
-    console.warn('[Scout] updateWidgetStatus: unexpected format:', statusData, '- defaulting to new');
-    window.__scoutWidgetStatus = 'new';
-    currentStatus = 'new';
-    removeLoadingStatus();
-    updateButtonStatus('new');
+    console.warn('[Scout] updateWidgetStatus: invalid format:', statusData, '- defaulting to new');
+    statusString = 'new';
   }
+
+  // CRITICAL: Validate status is one of the allowed values
+  const validStatuses = ['new', 'saved', 'hold', 'locked_in', 'loading', 'error'];
+  if (!validStatuses.includes(statusString)) {
+    console.warn('[Scout] updateWidgetStatus: invalid status value:', statusString, '- defaulting to new');
+    statusString = 'new';
+  }
+
+  // Update window state
+  window.__scoutWidgetStatus = statusString;
+
+  // Update currentStatus only if not loading
+  if (statusString !== 'loading') {
+    setCurrentStatus(statusString);
+  }
+
+  console.log('[Scout] Widget status set to:', statusString, '| currentStatus:', currentStatus);
+
+  // Handle loading state
+  if (statusString === 'loading') {
+    console.log('[Scout] Showing loading status');
+    showLoadingStatus();
+  } else {
+    console.log('[Scout] Removing loading status');
+    removeLoadingStatus();
+  }
+
+  // Update button UI
+  updateButtonStatus(statusString);
 }
 
 // Check if current page is a supported creator profile
@@ -2233,9 +2282,14 @@ async function handleProfileChange() {
     const profileKey = creatorData.profile_url;
 
     if (cachedStatus[profileKey]) {
-      window.__scoutWidgetStatus = cachedStatus[profileKey];
-      currentStatus = cachedStatus[profileKey];
-      updateWidgetStatus({ status: cachedStatus[profileKey] });
+      // CRITICAL FIX: Extract status string from cache object
+      // Cache stores { status: 'saved', found: true }, not just the string
+      const cachedStatusObj = cachedStatus[profileKey];
+      const statusString = typeof cachedStatusObj === 'string' ? cachedStatusObj : cachedStatusObj.status;
+
+      window.__scoutWidgetStatus = statusString;
+      setCurrentStatus(statusString);
+      updateWidgetStatus({ status: statusString });
     }
 
     if (cachedPrices[profileKey]) {
@@ -2267,7 +2321,8 @@ async function handleProfileChange() {
           window.__scoutWidgetPrice = null;
         } else if (status && status.status) {
           // Creator exists - update with latest data
-          cachedStatus[profileUrl] = status.status;
+          // CRITICAL FIX: Store status as object with { status, found } for consistency
+          cachedStatus[profileUrl] = { status: status.status, found: true };
 
           if (status.lock_in_price) {
             cachedPrices[profileUrl] = status.lock_in_price;
@@ -2286,7 +2341,16 @@ async function handleProfileChange() {
       });
     }
 
-    updateWidgetStatus(status);
+    // CRITICAL FIX: Pass consistent object format to updateWidgetStatus
+    // status from GAS is { status: 'saved', found: true, lock_in_price: ... }
+    // updateWidgetStatus expects { status: 'saved' }
+    if (status && status.found === false) {
+      updateWidgetStatus({ status: 'new' });
+    } else if (status && status.status) {
+      updateWidgetStatus({ status: status.status });
+    } else {
+      updateWidgetStatus({ status: 'new' });
+    }
   } catch (err) {
     if (requestId !== activeProfileRequestId) return;
     updateWidgetStatus({ status: 'new' });
