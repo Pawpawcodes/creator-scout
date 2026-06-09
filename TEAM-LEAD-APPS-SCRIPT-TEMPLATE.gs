@@ -17,7 +17,10 @@ function getCreatorRowNumber(scoutId, profileUrl) {
   const { masterSheet } = ensureMasterSheets();
 
   const lastRow = masterSheet.getLastRow();
-  if (lastRow <= 1) return null; // No data rows
+  if (lastRow <= 1) {
+    console.log(`[GAS ROW LOOKUP] scoutId=${scoutId} | profileUrl=${profileUrl} | result=null (no data)`);
+    return null; // No data rows
+  }
 
   // Read only columns A-B for speed (avoid full row reads)
   const range = masterSheet.getRange(2, 1, lastRow - 1, 2);
@@ -26,10 +29,21 @@ function getCreatorRowNumber(scoutId, profileUrl) {
   // Find the LATEST matching row (return last match, not first)
   // If duplicate rows exist, the newest one is at the bottom
   let lastMatchingRow = null;
+  const allMatches = [];
+
   for (let i = 0; i < data.length; i++) {
     if (data[i][0] === scoutId && data[i][1] === profileUrl) {
-      lastMatchingRow = i + 2; // Row numbers start at 1, data starts at row 2
+      const actualRowNum = i + 2; // Row numbers start at 1, data starts at row 2
+      allMatches.push(actualRowNum);
+      lastMatchingRow = actualRowNum;
     }
+  }
+
+  // Log all matches for forensics
+  if (allMatches.length > 0) {
+    console.log(`[GAS ROW LOOKUP] scoutId=${scoutId} | profileUrl=${profileUrl} | matchCount=${allMatches.length} | allRows=${allMatches.join(',')} | returning=${lastMatchingRow}`);
+  } else {
+    console.log(`[GAS ROW LOOKUP] scoutId=${scoutId} | profileUrl=${profileUrl} | result=null (no match)`);
   }
 
   return lastMatchingRow;
@@ -288,24 +302,48 @@ function handleGetCreatorStatus(email, profile_url) {
       return { error: 'Scout not found', status: null };
     }
 
+    console.log(`[GAS LOOKUP] scoutId=${scoutId} | profileUrl=${profile_url}`);
+
     // RESTORED: Pure simple logic from original working version
     // Always read fresh from sheet, no caching to avoid stale data
     const data = masterSheet.getDataRange().getValues();
 
-    // Find the LATEST matching row (in case of duplicates from past bugs)
+    // FORENSIC: Find ALL matching rows
+    const allMatchingRows = [];
     let foundRow = null;
     let foundRowNum = null;
 
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === scoutId && data[i][1] === profile_url) {
+        allMatchingRows.push({
+          rowNum: i + 1,
+          scoutId: data[i][0],
+          profileUrl: data[i][1],
+          status: data[i][4],
+          price: data[i][7]
+        });
+        // Keep updating to get the LATEST (last) matching row
         foundRow = data[i];
-        foundRowNum = i;
+        foundRowNum = i + 1;
+      }
+    }
+
+    // Log ALL matching rows for forensics
+    if (allMatchingRows.length > 0) {
+      console.log(`[GAS MATCHING ROWS] Found ${allMatchingRows.length} matching row(s)`);
+      for (let match of allMatchingRows) {
+        console.log(`[MATCHING ROW] row=${match.rowNum} | scoutId=${match.scoutId} | url=${match.profileUrl} | status=${match.status} | price=${match.price}`);
       }
     }
 
     if (!foundRow) {
+      console.log(`[GAS RETURN] status=null (not found)`);
       return { status: null, found: false, lock_in_price: null };
     }
+
+    // Log the row we're using
+    console.log(`[GAS ROW FOUND] rowNumber=${foundRowNum}`);
+    console.log(`[GAS ROW DATA] columnA(scoutId)=${foundRow[0]} | columnB(url)=${foundRow[1]} | columnC(platform)=${foundRow[2]} | columnD(username)=${foundRow[3]} | columnE(status)=${foundRow[4]} | columnF(createdAt)=${foundRow[5]} | columnG(updatedAt)=${foundRow[6]} | columnH(price)=${foundRow[7]}`);
 
     // Return the status from column E (index 4)
     // CRITICAL: Do NOT default to 'saved' when status column is empty
@@ -314,11 +352,14 @@ function handleGetCreatorStatus(email, profile_url) {
 
     if (!creatorStatus) {
       // Empty status = not a valid creator record
+      console.log(`[GAS RETURN] status=null (empty status in row)`);
       return { status: null, found: false, lock_in_price: null };
     }
 
+    console.log(`[GAS RETURN] status=${creatorStatus} | price=${lockInPrice}`);
     return { status: creatorStatus, found: true, lock_in_price: lockInPrice };
   } catch (error) {
+    console.log(`[GAS ERROR] ${error.toString()}`);
     return { error: error.toString(), status: null, lock_in_price: null };
   }
 }
