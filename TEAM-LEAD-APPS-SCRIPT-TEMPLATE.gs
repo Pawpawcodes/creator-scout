@@ -213,24 +213,46 @@ function handleGetCreatorStatus(email, profile_url) {
   }
 
   try {
-    const { masterSheet } = ensureMasterSheets();
     const scoutId = getScoutId(email);
-
     if (!scoutId) {
       return { error: 'Scout not found', status: null };
     }
 
+    // TAT OPTIMIZATION 4: Check GAS Cache first (6 hour TTL)
+    const cache = CacheService.getScriptCache();
+    const cacheKey = `creator_${scoutId}_${profile_url}`;
+    const cachedResult = cache.get(cacheKey);
+
+    if (cachedResult) {
+      const result = JSON.parse(cachedResult);
+      if (result.found === false) {
+        // Cached "not found" result
+        return { status: null, found: false, lock_in_price: null };
+      }
+      // Cached found result
+      return result;
+    }
+
+    // Cache miss - read sheet
+    const { masterSheet } = ensureMasterSheets();
     const data = masterSheet.getDataRange().getValues();
 
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === scoutId && data[i][1] === profile_url) {
         const creatorStatus = (data[i][4] || 'saved').toString();
-        const lockInPrice = (data[i][7] || null); // Column 8 (index 7)
-        return { status: creatorStatus, found: true, lock_in_price: lockInPrice };
+        const lockInPrice = (data[i][7] || null);
+        const result = { status: creatorStatus, found: true, lock_in_price: lockInPrice };
+
+        // Cache for 6 hours
+        cache.put(cacheKey, JSON.stringify(result), 21600);
+        return result;
       }
     }
 
-    return { status: null, found: false, lock_in_price: null };
+    // Not found - cache this too
+    const notFoundResult = { status: null, found: false, lock_in_price: null };
+    cache.put(cacheKey, JSON.stringify(notFoundResult), 21600);
+    return notFoundResult;
   } catch (error) {
     return { error: error.toString(), status: null, lock_in_price: null };
   }
@@ -261,6 +283,10 @@ function handleUpdateCreatorStatus(email, profile_url, new_status, personalSheet
 
     masterSheet.getRange(foundRow, 5).setValue(new_status);
     masterSheet.getRange(foundRow, 7).setValue(new Date().toISOString());
+
+    // TAT OPTIMIZATION: Invalidate cache for this creator
+    const cache = CacheService.getScriptCache();
+    cache.remove(`creator_${scoutId}_${profile_url}`);
 
     // Update personal sheet if provided
     if (personalSheetId) {
@@ -314,6 +340,10 @@ function handleLockInPrice(email, profile_url, price, personalSheetId) {
     }
 
     masterSheet.getRange(foundRow, 8).setValue(price);
+
+    // TAT OPTIMIZATION: Invalidate cache for this creator
+    const cache = CacheService.getScriptCache();
+    cache.remove(`creator_${scoutId}_${profile_url}`);
 
     // Update personal sheet if provided - Lock-In Price is column 7 (index 6)
     if (personalSheetId) {
@@ -411,6 +441,10 @@ function handleSaveCreator(email, personalSheetId, data, initialStatus = 'saved'
     // If personal sheet fails, still succeed but log
     Logger.log('Warning: Could not save to personal sheet: ' + error.toString());
   }
+
+  // TAT OPTIMIZATION: Invalidate cache for new creator
+  const cache = CacheService.getScriptCache();
+  cache.remove(`creator_${scoutId}_${profile_url}`);
 
   return { status: 'success', success: true };
 }

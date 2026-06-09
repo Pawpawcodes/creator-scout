@@ -1610,13 +1610,17 @@ function checkAndShowWidget() {
     // This ensures that when SPA navigation happens, it can properly detect profile changes
     lastProfileUrl = window.location.href;
 
-    // CRITICAL FIX 3: Load cached status immediately for persistence across refreshes
+    // TAT OPTIMIZATION 1: Cache-first status retrieval
+    // Load from cache immediately, only show loading if cache is empty
+    let hasCachedData = false;
+
     chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (result) => {
       const cachedStatus = result.CREATOR_STATUS_CACHE || {};
       const cachedPrices = result.CREATOR_LOCK_IN_PRICE_CACHE || {};
       const profileKey = creatorData.profile_url;
 
       if (cachedStatus[profileKey]) {
+        hasCachedData = true;
         window.__scoutWidgetStatus = cachedStatus[profileKey];
         currentStatus = cachedStatus[profileKey];
         updateButtonStatus(window.__scoutWidgetStatus);
@@ -1629,12 +1633,19 @@ function checkAndShowWidget() {
     });
 
     // Fetch actual scouted status in background
+    // Only show loading if we don't have cached data (avoids flashing "Loading..." when cache hit)
     const url = new URL(cachedSettings.GAS_URL);
     url.searchParams.append('action', 'getCreatorStatus');
     url.searchParams.append('email', cachedSettings.SCOUT_EMAIL);
     url.searchParams.append('profile_url', creatorData.profile_url);
 
-    showLoadingStatus();
+    // Show loading only after a brief delay and if cache was empty
+    // This prevents "Loading..." from flashing on cache hits
+    const showLoadingTimer = setTimeout(() => {
+      if (!hasCachedData) {
+        showLoadingStatus();
+      }
+    }, 100);
 
     // Fetch with 10-second timeout to prevent stuck loading state
     const fetchController = new AbortController();
@@ -1644,6 +1655,7 @@ function checkAndShowWidget() {
       .then(response => response.json())
       .then(result => {
         clearTimeout(fetchTimeout);
+        clearTimeout(showLoadingTimer);
         // RACE CONDITION FIX: Validate this response is not stale
         // If activeProfileRequestId has changed, a new profile was loaded while this fetch was pending
         if (requestId !== activeProfileRequestId) {
@@ -1697,6 +1709,7 @@ function checkAndShowWidget() {
       })
       .catch(error => {
         clearTimeout(fetchTimeout);
+        clearTimeout(showLoadingTimer);
         console.error('Error checking widget status:', error);
         removeLoadingStatus();
         // CRITICAL FIX: Set default status to 'new' on fetch failure
