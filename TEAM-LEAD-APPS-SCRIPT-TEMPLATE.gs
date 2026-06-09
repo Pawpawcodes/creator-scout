@@ -294,27 +294,28 @@ function handleGetCreatorStatus(email, profile_url) {
       return { error: 'Scout not found', status: null };
     }
 
-    // Check data cache first (6 hour TTL)
+    // Check data cache first (6 hour TTL) - but ONLY for found creators
+    // Don't cache "not found" results to prevent cache pollution on new saves
     const cache = CacheService.getScriptCache();
     const cacheKey = `creator_${scoutId}_${profile_url}`;
     const cachedResult = cache.get(cacheKey);
 
     if (cachedResult) {
       const result = JSON.parse(cachedResult);
-      if (result.found === false) {
-        return { status: null, found: false, lock_in_price: null };
+      // Only use cache if creator was found (avoid stale "not found" results)
+      if (result.found !== false) {
+        return result;
       }
-      return result;
+      // Cache says "not found" - force a fresh check to catch newly saved creators
     }
 
-    // Cache miss - use targeted row lookup (avoids expensive full sheet scan)
+    // Cache miss or stale "not found" - use targeted row lookup (avoids expensive full sheet scan)
     const rowNumber = getCreatorRowNumber(scoutId, profile_url);
 
     if (!rowNumber) {
-      // Creator not found - cache as not found
-      const notFoundResult = { status: null, found: false, lock_in_price: null };
-      cache.put(cacheKey, JSON.stringify(notFoundResult), 21600);
-      return notFoundResult;
+      // Creator not found - DO NOT CACHE this result (prevents cache pollution)
+      // On next call, we'll check the sheet again in case it was just saved
+      return { status: null, found: false, lock_in_price: null };
     }
 
     // Get row data using cached row number (one read instead of scanning entire sheet)
@@ -342,10 +343,17 @@ function handleUpdateCreatorStatus(email, profile_url, new_status, personalSheet
     }
 
     // Use targeted row lookup instead of scanning entire sheet
-    const foundRow = getCreatorRowNumber(scoutId, profile_url);
+    let foundRow = getCreatorRowNumber(scoutId, profile_url);
 
     if (!foundRow) {
-      return { error: 'Creator not found', status: 'error' };
+      // Fallback: Force a fresh scan in case index is stale
+      const cache = CacheService.getScriptCache();
+      cache.remove(`creator_index_${scoutId}`);
+      foundRow = getCreatorRowNumber(scoutId, profile_url);
+
+      if (!foundRow) {
+        return { error: 'Creator not found', status: 'error' };
+      }
     }
 
     masterSheet.getRange(foundRow, 5).setValue(new_status);
