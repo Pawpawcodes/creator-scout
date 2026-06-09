@@ -6,6 +6,40 @@
 const MASTER_SHEET_NAME = 'Master';
 const SCOUTS_SHEET_NAME = 'Scouts';
 
+// PERFORMANCE OPTIMIZATION: Creator index cache for O(1) lookups
+// Maps creatorKey (scoutId_profileUrl) → rowNumber in Master Sheet
+function getCreatorIndexCache(scoutId) {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = `creator_index_${scoutId}`;
+  const cachedIndex = cache.get(cacheKey);
+
+  if (cachedIndex) {
+    return JSON.parse(cachedIndex);
+  }
+
+  // Cache miss - build index from Master Sheet
+  const { masterSheet } = ensureMasterSheets();
+  const data = masterSheet.getDataRange().getValues();
+  const index = {};
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === scoutId) {
+      const profileUrl = data[i][1];
+      index[profileUrl] = i + 1; // Store 1-based row number
+    }
+  }
+
+  // Cache the index for 6 hours
+  cache.put(cacheKey, JSON.stringify(index), 21600);
+  return index;
+}
+
+// Invalidate creator index when scout's data changes
+function invalidateCreatorIndex(scoutId) {
+  const cache = CacheService.getScriptCache();
+  cache.remove(`creator_index_${scoutId}`);
+}
+
 // Ensure Master and Scouts sheets exist with proper headers
 function ensureMasterSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -218,7 +252,7 @@ function handleGetCreatorStatus(email, profile_url) {
       return { error: 'Scout not found', status: null };
     }
 
-    // TAT OPTIMIZATION 4: Check GAS Cache first (6 hour TTL)
+    // Check data cache first (6 hour TTL)
     const cache = CacheService.getScriptCache();
     const cacheKey = `creator_${scoutId}_${profile_url}`;
     const cachedResult = cache.get(cacheKey);
@@ -226,33 +260,32 @@ function handleGetCreatorStatus(email, profile_url) {
     if (cachedResult) {
       const result = JSON.parse(cachedResult);
       if (result.found === false) {
-        // Cached "not found" result
         return { status: null, found: false, lock_in_price: null };
       }
-      // Cached found result
       return result;
     }
 
-    // Cache miss - read sheet
-    const { masterSheet } = ensureMasterSheets();
-    const data = masterSheet.getDataRange().getValues();
+    // Cache miss - use index for O(1) lookup
+    const index = getCreatorIndexCache(scoutId);
+    const rowNumber = index[profile_url];
 
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === scoutId && data[i][1] === profile_url) {
-        const creatorStatus = (data[i][4] || 'saved').toString();
-        const lockInPrice = (data[i][7] || null);
-        const result = { status: creatorStatus, found: true, lock_in_price: lockInPrice };
-
-        // Cache for 6 hours
-        cache.put(cacheKey, JSON.stringify(result), 21600);
-        return result;
-      }
+    if (!rowNumber) {
+      // Creator not in index - cache as not found
+      const notFoundResult = { status: null, found: false, lock_in_price: null };
+      cache.put(cacheKey, JSON.stringify(notFoundResult), 21600);
+      return notFoundResult;
     }
 
-    // Not found - cache this too
-    const notFoundResult = { status: null, found: false, lock_in_price: null };
-    cache.put(cacheKey, JSON.stringify(notFoundResult), 21600);
-    return notFoundResult;
+    // Get row data using cached row number (one read instead of scanning entire sheet)
+    const { masterSheet } = ensureMasterSheets();
+    const row = masterSheet.getRange(rowNumber, 1, 1, 8).getValues()[0];
+    const creatorStatus = (row[4] || 'saved').toString();
+    const lockInPrice = (row[7] || null);
+    const result = { status: creatorStatus, found: true, lock_in_price: lockInPrice };
+
+    // Cache the result for 6 hours
+    cache.put(cacheKey, JSON.stringify(result), 21600);
+    return result;
   } catch (error) {
     return { error: error.toString(), status: null, lock_in_price: null };
   }
@@ -267,15 +300,9 @@ function handleUpdateCreatorStatus(email, profile_url, new_status, personalSheet
       return { error: 'Scout not found', status: 'error' };
     }
 
-    const masterData = masterSheet.getDataRange().getValues();
-    let foundRow = null;
-
-    for (let i = 1; i < masterData.length; i++) {
-      if (masterData[i][0] === scoutId && masterData[i][1] === profile_url) {
-        foundRow = i + 1;
-        break;
-      }
-    }
+    // Use index for O(1) lookup instead of scanning entire sheet
+    const index = getCreatorIndexCache(scoutId);
+    const foundRow = index[profile_url];
 
     if (!foundRow) {
       return { error: 'Creator not found', status: 'error' };
@@ -284,9 +311,10 @@ function handleUpdateCreatorStatus(email, profile_url, new_status, personalSheet
     masterSheet.getRange(foundRow, 5).setValue(new_status);
     masterSheet.getRange(foundRow, 7).setValue(new Date().toISOString());
 
-    // TAT OPTIMIZATION: Invalidate cache for this creator
+    // Invalidate caches for this creator
     const cache = CacheService.getScriptCache();
     cache.remove(`creator_${scoutId}_${profile_url}`);
+    invalidateCreatorIndex(scoutId);
 
     // Update personal sheet if provided
     if (personalSheetId) {
@@ -324,16 +352,9 @@ function handleLockInPrice(email, profile_url, price, personalSheetId) {
       return { error: 'Scout not found', status: 'error' };
     }
 
-    // Update Master Sheet - Lock-In Price is column 8 (index 7)
-    const masterData = masterSheet.getDataRange().getValues();
-    let foundRow = null;
-
-    for (let i = 1; i < masterData.length; i++) {
-      if (masterData[i][0] === scoutId && masterData[i][1] === profile_url) {
-        foundRow = i + 1;
-        break;
-      }
-    }
+    // Use index for O(1) lookup instead of scanning entire sheet
+    const index = getCreatorIndexCache(scoutId);
+    const foundRow = index[profile_url];
 
     if (!foundRow) {
       return { error: 'Creator not found in Master Sheet', status: 'error' };
@@ -341,9 +362,10 @@ function handleLockInPrice(email, profile_url, price, personalSheetId) {
 
     masterSheet.getRange(foundRow, 8).setValue(price);
 
-    // TAT OPTIMIZATION: Invalidate cache for this creator
+    // Invalidate caches for this creator
     const cache = CacheService.getScriptCache();
     cache.remove(`creator_${scoutId}_${profile_url}`);
+    invalidateCreatorIndex(scoutId);
 
     // Update personal sheet if provided - Lock-In Price is column 7 (index 6)
     if (personalSheetId) {
@@ -385,12 +407,10 @@ function handleSaveCreator(email, personalSheetId, data, initialStatus = 'saved'
 
   const { masterSheet } = ensureMasterSheets();
 
-  // Check if creator already exists in Master Sheet for this scout
-  const masterData = masterSheet.getDataRange().getValues();
-  for (let i = 1; i < masterData.length; i++) {
-    if (masterData[i][0] === scoutId && masterData[i][1] === profile_url) {
-      return { error: 'Creator already scouted', status: 'saved' };
-    }
+  // Use index for O(1) duplicate check instead of scanning entire sheet
+  const index = getCreatorIndexCache(scoutId);
+  if (index[profile_url]) {
+    return { error: 'Creator already scouted', status: 'saved' };
   }
 
   const now = new Date().toISOString();
@@ -442,9 +462,10 @@ function handleSaveCreator(email, personalSheetId, data, initialStatus = 'saved'
     Logger.log('Warning: Could not save to personal sheet: ' + error.toString());
   }
 
-  // TAT OPTIMIZATION: Invalidate cache for new creator
+  // Invalidate caches for new creator
   const cache = CacheService.getScriptCache();
   cache.remove(`creator_${scoutId}_${profile_url}`);
+  invalidateCreatorIndex(scoutId);
 
   return { status: 'success', success: true };
 }
