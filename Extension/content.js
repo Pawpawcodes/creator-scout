@@ -1750,29 +1750,11 @@ function checkAndShowWidget() {
     // This ensures that when SPA navigation happens, it can properly detect profile changes
     lastProfileUrl = window.location.href;
 
-    // CRITICAL: ALWAYS start fresh - no stale widget state
-    // Reset ALL state to defaults before fetching GAS response
-    window.__scoutWidgetStatus = 'loading';
-    currentStatus = 'new';
-    window.__scoutWidgetPrice = null;
-
-    // Clear localStorage and cache for this creator to prevent stale data display
-    const profileKey = creatorData.profile_url;
-    localStorage.removeItem(`scout_status_${profileKey}`);
-    chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (cacheRes) => {
-      const cachedStatus = cacheRes.CREATOR_STATUS_CACHE || {};
-      const cachedPrices = cacheRes.CREATOR_LOCK_IN_PRICE_CACHE || {};
-      delete cachedStatus[profileKey];
-      delete cachedPrices[profileKey];
-      chrome.storage.local.set({
-        CREATOR_STATUS_CACHE: cachedStatus,
-        CREATOR_LOCK_IN_PRICE_CACHE: cachedPrices
-      });
-    });
-
-    // Show loading state immediately
+    // CRITICAL FIX: Always show loading state until we confirm from GAS
+    // This prevents flashing stale status and ensures we always show the source of truth
     showLoadingStatus();
 
+    const profileKey = creatorData.profile_url;
     const url = new URL(cachedSettings.GAS_URL);
     url.searchParams.append('action', 'getCreatorStatus');
     url.searchParams.append('email', cachedSettings.SCOUT_EMAIL);
@@ -1796,61 +1778,80 @@ function checkAndShowWidget() {
 
         removeLoadingStatus();
 
-        // FORCE: Widget state must ONLY come from GAS response
-        // NO defaults, NO fallbacks, NO cache usage
+        // CRITICAL FIX: Handle deleted creators
+        // If creator is not found in sheets, FORCE COMPLETE UI RESET to 'new'
+        // Do not just update classes - completely reset the widget state
+        if (result && result.found === false) {
+          // Creator was deleted - IMMEDIATELY clear ALL state and caches
+          localStorage.removeItem(`scout_status_${profileKey}`);
 
-        // CRITICAL: GAS response is the ONLY source of truth
-        // If not found in sheet → New
-        // If found in sheet → Use exact status from sheet (no defaults)
-        const found = result && result.found !== false;
-        const gasStatus = result?.status || null;
+          chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (cacheRes) => {
+            const cachedStatus = cacheRes.CREATOR_STATUS_CACHE || {};
+            const cachedPrices = cacheRes.CREATOR_LOCK_IN_PRICE_CACHE || {};
+            delete cachedStatus[profileKey];
+            delete cachedPrices[profileKey];
+            chrome.storage.local.set({
+              CREATOR_STATUS_CACHE: cachedStatus,
+              CREATOR_LOCK_IN_PRICE_CACHE: cachedPrices
+            });
+          });
 
-        let newStatus;
-        let lockInPrice = null;
+          // FORCE COMPLETE UI RESET - not just button update
+          window.__scoutWidgetStatus = 'new';
+          currentStatus = 'new';
+          window.__scoutWidgetPrice = null;
 
-        if (!found || !gasStatus) {
-          // Creator not found in sheets OR no status returned
-          // Show New (gray) - this is the only valid default
-          newStatus = 'new';
-          lockInPrice = null;
-        } else {
-          // Creator found in sheet with a status
-          // Use EXACT status from sheet - no modifications
-          newStatus = gasStatus;
-          lockInPrice = result.lock_in_price || null;
+          // Get the button and COMPLETELY RESET it
+          const btn = document.querySelector('.scout-floating-button');
+          if (btn) {
+            // Remove ALL status classes and loading class
+            btn.classList.remove('scout-loading', 'status-new', 'status-saved', 'status-hold', 'status-locked_in', 'status-error', 'status-loading');
+            // Add ONLY the new status class
+            btn.classList.add('status-new');
+            // Reset text
+            const textEl = btn.querySelector('.scout-button-text');
+            if (textEl) {
+              textEl.textContent = 'Scout';
+            }
+            // Reset title
+            btn.title = 'Scout Creator';
+          }
+
+          // Close any open popup
+          const popup = document.getElementById('scout-widget-popup');
+          if (popup) {
+            popup.classList.remove('scout-popup-open');
+            setTimeout(() => popup.remove(), 200);
+          }
+
+          return;
         }
 
-        // CRITICAL: Apply GAS response to widget - ONLY source of state
+        // Get actual status from GAS (source of truth)
+        // Use ONLY the GAS response, never fall back to cache
+        let newStatus = result?.status || 'new';
+        const lockInPrice = result?.lock_in_price || null;
+
+        // FORCE COMPLETE UI UPDATE - reset all state and apply GAS response
         window.__scoutWidgetStatus = newStatus;
         currentStatus = newStatus;
         window.__scoutWidgetPrice = lockInPrice;
 
-        // Update button to match GAS response EXACTLY
+        // Get the button and COMPLETELY RESET it with new status
         const btn = document.querySelector('.scout-floating-button');
         if (btn) {
-          // Remove ALL possible status classes
+          // Remove ALL old status classes and loading class
           btn.classList.remove('scout-loading', 'status-new', 'status-saved', 'status-hold', 'status-locked_in', 'status-error', 'status-loading');
-          // Add the EXACT status from GAS
+          // Add ONLY the correct status class
           btn.classList.add(`status-${newStatus}`);
-          // Reset button text
+          // Reset text
           const textEl = btn.querySelector('.scout-button-text');
           if (textEl) {
             textEl.textContent = 'Scout';
           }
-          // Set title
-          const titles = {
-            'new': 'Scout Creator',
-            'saved': 'Creator Already Saved',
-            'hold': 'Creator On Hold',
-            'locked_in': 'Creator Locked In'
-          };
-          btn.title = titles[newStatus] || 'Scout Creator';
-        }
-
-        // Close any open popup to prevent stale state display
-        const popup = document.getElementById('scout-widget-popup');
-        if (popup) {
-          popup.remove();
+          // Update title based on status
+          const titleText = newStatus === 'saved' ? 'Creator Already Saved' : newStatus === 'hold' ? 'Creator On Hold' : newStatus === 'locked_in' ? 'Creator Locked In' : 'Scout Creator';
+          btn.title = titleText;
         }
 
         // Update cache and localStorage with CONFIRMED status from GAS
