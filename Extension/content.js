@@ -2367,7 +2367,10 @@ async function handleProfileChange() {
   window.__currentCreatorData = creatorData;
   updateWidgetCreatorData(creatorData);
 
-  // CRITICAL: Capture statusReqId in closure so callback can check if it's stale
+  // CRITICAL FIX: Do NOT apply cached status to UI during initial load
+  // This prevents showing old cached status for deleted creators
+  // Only GAS response is applied to UI - it's the source of truth
+  // Cache read is only for diagnostics and for prices
   chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (result) => {
     console.log(`[CACHE READ] CREATOR_STATUS_CACHE | requestId=${statusReqId}`);
 
@@ -2382,22 +2385,18 @@ async function handleProfileChange() {
     const profileKey = creatorData.profile_url;
 
     if (cachedStatus[profileKey]) {
-      // CRITICAL FIX: Extract status string from cache object
-      // Cache stores { status: 'saved', found: true }, not just the string
+      // Read cache for diagnostics only, but DO NOT apply to UI
       const cachedStatusObj = cachedStatus[profileKey];
       const statusString = typeof cachedStatusObj === 'string' ? cachedStatusObj : cachedStatusObj.status;
-
-      console.log(`[CACHE READ] profile=${profileKey} | cachedObj=${JSON.stringify(cachedStatusObj)} | extracted=${statusString}`);
-
-      window.__scoutWidgetStatus = statusString;
-      setCurrentStatus(statusString, statusReqId);
-      updateWidgetStatus({ status: statusString }, statusReqId);
+      console.log(`[CACHE READ] DIAGNOSTIC_ONLY | profile=${profileKey} | cachedStatus=${statusString} | (NOT APPLIED TO UI)`);
     } else {
       console.log(`[CACHE READ] profile=${profileKey} | NO_CACHE_ENTRY`);
     }
 
+    // Only apply cached PRICE, not status
     if (cachedPrices[profileKey]) {
       window.__scoutWidgetPrice = cachedPrices[profileKey];
+      console.log(`[CACHE READ] PRICE_APPLIED | price=${cachedPrices[profileKey]}`);
     }
   });
 
