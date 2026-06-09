@@ -943,6 +943,7 @@ function updateButtonStatus(status) {
   // Remove ALL status classes before adding the new one
   btn.classList.remove('status-new', 'status-saved', 'status-error', 'status-hold', 'status-locked_in', 'status-loading');
   btn.classList.add(`status-${status}`);
+  console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=${status} | source=updateButtonStatus`);
   window.__scoutWidgetStatus = status;
 
   // Update title text for ALL status states
@@ -1332,6 +1333,7 @@ async function handleSaveCreator(status = 'saved') {
               });
               // Revert optimistic state since creator doesn't actually exist
               setCurrentStatus(previousStatus, saveActionRequestId);
+              console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=${previousStatus} | source=handleSaveCreator:verify_failure | requestId=${saveActionRequestId}`);
               window.__scoutWidgetStatus = previousStatus;
               updateButtonStatus(previousStatus);
               // CRITICAL: Clear the persistent status so next attempt starts fresh
@@ -1377,10 +1379,10 @@ async function handleSaveCreator(status = 'saved') {
 
                 // Update UI if status differs from optimistic update
                 if (verifyResult.status !== status) {
+                  console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=${verifyResult.status} | source=handleSaveCreator:verify_differs | requestId=${saveActionRequestId}`);
                   window.__scoutWidgetStatus = verifyResult.status;
                   setCurrentStatus(verifyResult.status, saveActionRequestId);
                   updateButtonStatus(verifyResult.status);
-                  console.log(`[STATUS REQUEST ${saveActionRequestId}] Verified status differs, updated to: ${verifyResult.status}`);
                 }
               });
             }
@@ -1809,6 +1811,7 @@ function checkAndShowWidget() {
 
   // INSTANT: Mount empty widget shell immediately (~0ms)
   // Show 'loading' status initially so user sees purple loading state, not blue
+  console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=loading | source=checkAndShowWidget:mount`);
   window.__scoutWidgetStatus = 'loading';
   setCurrentStatus('new'); // Track actual status internally (new until we get response from GAS)
   window.__scoutWidgetPrice = null;
@@ -1891,6 +1894,7 @@ function checkAndShowWidget() {
           });
 
           // FORCE COMPLETE UI RESET - not just button update
+          console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=new | source=checkAndShowWidget:deleted_creator_callback`);
           window.__scoutWidgetStatus = 'new';
           setCurrentStatus('new');
           window.__scoutWidgetPrice = null;
@@ -1927,6 +1931,7 @@ function checkAndShowWidget() {
         const lockInPrice = result?.lock_in_price || null;
 
         // FORCE COMPLETE UI UPDATE - reset all state and apply GAS response
+        console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=${newStatus} | source=checkAndShowWidget:gas_response_callback | gasStatus=${result?.status}`);
         window.__scoutWidgetStatus = newStatus;
         setCurrentStatus(newStatus);
         window.__scoutWidgetPrice = lockInPrice;
@@ -1986,6 +1991,7 @@ function checkAndShowWidget() {
         removeLoadingStatus();
         // CRITICAL FIX: Set default status to 'new' on fetch failure
         // Prevents currentStatus from remaining null, which causes buttons to use wrong API action
+        console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=new | source=checkAndShowWidget:fetch_error_fallback | error=${error.message}`);
         window.__scoutWidgetStatus = 'new';
         currentStatus = 'new';
         updateButtonStatus('new');
@@ -2029,6 +2035,7 @@ function checkAndShowWidget() {
               });
             });
 
+            console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=new | source=checkAndShowWidget:fallback_deleted_creator | gasFound=false`);
             window.__scoutWidgetStatus = 'new';
             currentStatus = 'new';
             window.__scoutWidgetPrice = null;
@@ -2059,6 +2066,7 @@ function checkAndShowWidget() {
             const fallbackPrice = result.lock_in_price || null;
 
             // FORCE COMPLETE UI UPDATE - reset all state and apply GAS response
+            console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=${fallbackStatus} | source=checkAndShowWidget:fallback_gas_response | gasStatus=${result.status}`);
             window.__scoutWidgetStatus = fallbackStatus;
             currentStatus = fallbackStatus;
             window.__scoutWidgetPrice = fallbackPrice;
@@ -2099,6 +2107,7 @@ function checkAndShowWidget() {
         })
         .catch(e => {
           clearTimeout(fallbackTimeout);
+          console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=new | source=checkAndShowWidget:fallback_error | error=${e.message}`);
           window.__scoutWidgetStatus = 'new';
           currentStatus = 'new';
           updateButtonStatus('new');
@@ -2333,7 +2342,9 @@ async function handleProfileChange() {
 
   currentCreatorData = null;
   lastFetchedStatus = null;
+  console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${currentStatus} | newStatus=null | source=handleProfileChange:reset`);
   currentStatus = null;
+  console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=new | source=handleProfileChange:reset`);
   window.__scoutWidgetStatus = 'new';
   window.__scoutWidgetPrice = null;
 
