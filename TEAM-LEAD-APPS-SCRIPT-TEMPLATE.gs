@@ -313,10 +313,33 @@ function handleGetCreatorStatus(email, profile_url) {
     // Get row data directly from sheet (always fresh, never cached)
     const { masterSheet } = ensureMasterSheets();
     const row = masterSheet.getRange(rowNumber, 1, 1, 8).getValues()[0];
-    const creatorStatus = (row[4] || 'saved').toString();
-    const lockInPrice = (row[7] || null);
-    const result = { status: creatorStatus, found: true, lock_in_price: lockInPrice };
 
+    // CRITICAL FIX: Validate that cached row number still points to the correct creator
+    // If rows were deleted, row numbers shift and cache becomes invalid
+    const rowScoutId = row[0];
+    const rowProfileUrl = row[1];
+
+    if (rowScoutId !== scoutId || rowProfileUrl !== profile_url) {
+      // Cached row number is INVALID - points to wrong creator
+      // Clear the cache and force fresh lookup
+      const cache = CacheService.getScriptCache();
+      cache.remove(`creator_row_${scoutId}_${profile_url}`);
+      return { status: null, found: false, lock_in_price: null };
+    }
+
+    // Row is valid - extract status
+    // CRITICAL: Do NOT default to 'saved' - that masks deleted records
+    // If status column is empty, return null (let extension handle the default)
+    const statusValue = row[4];
+    const creatorStatus = statusValue ? statusValue.toString() : null;
+    const lockInPrice = (row[7] || null);
+
+    // If no status found, creator is incomplete or corrupted
+    if (!creatorStatus) {
+      return { status: null, found: false, lock_in_price: null };
+    }
+
+    const result = { status: creatorStatus, found: true, lock_in_price: lockInPrice };
     return result;
   } catch (error) {
     return { error: error.toString(), status: null, lock_in_price: null };
@@ -349,9 +372,10 @@ function handleUpdateCreatorStatus(email, profile_url, new_status, personalSheet
     masterSheet.getRange(foundRow, 5).setValue(new_status);
     masterSheet.getRange(foundRow, 7).setValue(new Date().toISOString());
 
-    // Invalidate caches for this creator
+    // CRITICAL: Invalidate ALL caches for this creator
     const cache = CacheService.getScriptCache();
-    cache.remove(`creator_${scoutId}_${profile_url}`);
+    cache.remove(`creator_${scoutId}_${profile_url}`); // Status cache
+    cache.remove(`creator_row_${scoutId}_${profile_url}`); // Row number cache - MUST invalidate this!
     invalidateCreatorIndex(scoutId);
 
     // Update personal sheet if provided
@@ -399,9 +423,10 @@ function handleLockInPrice(email, profile_url, price, personalSheetId) {
 
     masterSheet.getRange(foundRow, 8).setValue(price);
 
-    // Invalidate caches for this creator
+    // CRITICAL: Invalidate ALL caches for this creator
     const cache = CacheService.getScriptCache();
-    cache.remove(`creator_${scoutId}_${profile_url}`);
+    cache.remove(`creator_${scoutId}_${profile_url}`); // Status cache
+    cache.remove(`creator_row_${scoutId}_${profile_url}`); // Row number cache
     invalidateCreatorIndex(scoutId);
 
     // Update personal sheet if provided - Lock-In Price is column 7 (index 6)
