@@ -1257,6 +1257,13 @@ async function handleSaveCreator(status = 'saved') {
         // Show error message
         showSaveMessage(`Error saving status: ${error.message}`, 'error');
       });
+  } catch (error) {
+    console.error('Error in handleSaveCreator:', error);
+    showSaveMessage(`Error: ${error.message}`, 'error');
+    // Revert button state on any unexpected error
+    clickedBtn.disabled = false;
+    clickedBtn.textContent = getButtonLabel(currentStatus);
+  }
 }
 
 // Show lock-in price input section (called after Lock button click)
