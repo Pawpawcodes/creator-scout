@@ -1226,6 +1226,14 @@ async function handleSaveCreator(status = 'saved') {
           if (previousStatus === 'saved') popup.classList.add('popup-saved');
           else if (previousStatus === 'hold') popup.classList.add('popup-hold');
           else if (previousStatus === 'locked_in') popup.classList.add('popup-locked-in');
+
+          // Remove lock price section if we're reverting from locked_in
+          if (status === 'locked_in' && previousStatus !== 'locked_in') {
+            const priceSection = popup.querySelector('.scout-lock-price-section');
+            if (priceSection) {
+              priceSection.remove();
+            }
+          }
         }
 
         const badge = document.querySelector('.creator-scout-widget .scout-badge');
