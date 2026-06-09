@@ -300,44 +300,23 @@ function handleGetCreatorStatus(email, profile_url) {
       return { error: 'Scout not found', status: null };
     }
 
-    // Check data cache first (6 hour TTL) - but ONLY for found creators
-    // Don't cache "not found" results to prevent cache pollution on new saves
-    const cache = CacheService.getScriptCache();
-    const cacheKey = `creator_${scoutId}_${profile_url}`;
-    const cachedResult = cache.get(cacheKey);
-
-    if (cachedResult) {
-      const result = JSON.parse(cachedResult);
-      // Only use cache if creator was found (avoid stale "not found" results)
-      if (result.found !== false) {
-        Logger.log(`[getCreatorStatus] Cache HIT for ${scoutId} | ${profile_url} | status: ${result.status}`);
-        return result;
-      }
-      // Cache says "not found" - force a fresh check to catch newly saved creators
-    }
-
-    // Cache miss or stale "not found" - use targeted row lookup (avoids expensive full sheet scan)
+    // CRITICAL: Always fetch fresh from sheet - NO cache for status restoration
+    // Correctness is more important than cache hits
+    // Cache invalidation is unreliable, so we disable caching entirely for this operation
     const rowNumber = getCreatorRowNumber(scoutId, profile_url);
-    Logger.log(`[getCreatorStatus] Lookup ${scoutId} | ${profile_url} | rowNumber: ${rowNumber}`);
 
     if (!rowNumber) {
-      // Creator not found - DO NOT CACHE this result (prevents cache pollution)
-      // On next call, we'll check the sheet again in case it was just saved
-      Logger.log(`[getCreatorStatus] NOT FOUND: ${scoutId} | ${profile_url}`);
+      // Creator not found in sheet
       return { status: null, found: false, lock_in_price: null };
     }
 
-    // Get row data using cached row number (one read instead of scanning entire sheet)
+    // Get row data directly from sheet (always fresh, never cached)
     const { masterSheet } = ensureMasterSheets();
     const row = masterSheet.getRange(rowNumber, 1, 1, 8).getValues()[0];
     const creatorStatus = (row[4] || 'saved').toString();
     const lockInPrice = (row[7] || null);
     const result = { status: creatorStatus, found: true, lock_in_price: lockInPrice };
 
-    Logger.log(`[getCreatorStatus] FOUND row ${rowNumber}: status=${creatorStatus}, price=${lockInPrice}`);
-
-    // Cache the result for 6 hours
-    cache.put(cacheKey, JSON.stringify(result), 21600);
     return result;
   } catch (error) {
     return { error: error.toString(), status: null, lock_in_price: null };
