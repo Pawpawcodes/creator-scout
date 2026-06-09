@@ -606,49 +606,8 @@ let currentCreatorData = null;
 let lastFetchedStatus = null;
 let currentStatus = null;
 
-// CRITICAL: Validate that currentStatus is always a string
-// CRITICAL FIX: Add requestId parameter to prevent stale updates
-function setCurrentStatus(value, requestId) {
-  const validStatuses = ['new', 'saved', 'hold', 'locked_in', 'loading', 'error'];
-
-  // Get caller info for forensic tracing
-  const stack = new Error().stack.split('\n');
-  const caller = stack[2] ? stack[2].trim() : 'unknown';
-
-  // RACE CONDITION FIX: Ignore stale requests
-  if (requestId !== undefined && requestId !== statusRequestId) {
-    console.log(`[STATUS ASSIGN] STALE_IGNORED | requestId=${requestId} | currentRequest=${statusRequestId}`);
-    return;
-  }
-
-  const oldStatus = currentStatus;
-  let newStatus = null;
-
-  if (typeof value === 'string' && validStatuses.includes(value)) {
-    newStatus = value;
-    currentStatus = value;
-  } else if (typeof value === 'object' && value !== null && typeof value.status === 'string') {
-    // If an object with status property is passed, extract the string
-    newStatus = value.status;
-    currentStatus = value.status;
-    console.warn('[FORENSIC] setCurrentStatus received object instead of string:', value);
-  } else {
-    // Default to 'new' for any invalid value
-    newStatus = 'new';
-    currentStatus = 'new';
-    console.warn('[FORENSIC] setCurrentStatus received invalid value:', value, '- defaulting to new');
-  }
-
-  console.log(`[STATUS ASSIGN] oldStatus=${oldStatus} | newStatus=${newStatus} | requestId=${requestId || 'SYNC'} | source=${caller}`);
-}
-
 // Prevent async race conditions: invalidate old responses when profile changes
 let activeProfileRequestId = 0;
-
-// CRITICAL: Request versioning for status restoration
-// Incremented EVERY TIME we start a new status restoration/update flow
-// Used to prevent stale async callbacks from overwriting newer status
-let statusRequestId = 0;
 
 // Speed Optimization: Lightweight refresh queue (300ms debounce, not blocking)
 let refreshTimeout = null;
@@ -760,7 +719,6 @@ function createFloatingButton() {
   // Remove any existing button
   const existing = document.getElementById('scout-floating-button-container');
   if (existing) {
-    console.log(`[WIDGET DESTROYED] Removing existing widget instance | currentStatus=${currentStatus}`);
     existing.remove();
   }
 
@@ -769,7 +727,6 @@ function createFloatingButton() {
   button.className = 'scout-floating-button-container';
 
   const status = window.__scoutWidgetStatus || 'new';
-  console.log(`[WIDGET CREATED] New widget instance | status=${status} | currentStatus=${currentStatus}`);
   button.innerHTML = `
     <button class="scout-floating-button status-${status}" title="Scout Creator">
       <svg class="scout-button-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
@@ -934,28 +891,11 @@ function updateButtonStatus(status) {
   const btn = document.querySelector('.scout-floating-button');
   if (!btn) return;
 
-  // CRITICAL FIX: Ensure status is always a string
-  if (typeof status !== 'string') {
-    console.warn('[Scout] updateButtonStatus received non-string status:', status, '- defaulting to new');
-    status = 'new';
-  }
-
-  // Remove ALL status classes before adding the new one
   btn.classList.remove('status-new', 'status-saved', 'status-error', 'status-hold', 'status-locked_in', 'status-loading');
   btn.classList.add(`status-${status}`);
-  console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=${status} | source=updateButtonStatus`);
   window.__scoutWidgetStatus = status;
 
-  // Update title text for ALL status states
-  const titles = {
-    'saved': 'Creator Already Saved',
-    'hold': 'Creator On Hold',
-    'locked_in': 'Creator Locked In',
-    'loading': 'Loading...',
-    'error': 'Error',
-    'new': 'Scout Creator'
-  };
-  const titleText = titles[status] || 'Scout Creator';
+  const titleText = status === 'saved' ? 'Creator Already Saved' : 'Scout Creator';
   btn.title = titleText;
 }
 
@@ -1121,18 +1061,10 @@ function getStatusMessage(status) {
 
 // Handle save creator with multi-status support
 async function handleSaveCreator(status = 'saved') {
-  // CRITICAL FIX: Increment status request ID when user initiates Save/Hold/Lock
-  // This invalidates any older status restoration requests that might be pending
-  const saveActionRequestId = ++statusRequestId;
-  console.log(`[STATUS REQUEST ${saveActionRequestId}] [STATUS REQUEST START] User clicked ${status}`);
-
   const statusButtons = document.querySelectorAll('.scout-status-btn');
   const clickedBtn = document.querySelector(`[data-status="${status}"]`);
 
-  if (!clickedBtn || clickedBtn.disabled) {
-    console.log(`[STATUS REQUEST ${saveActionRequestId}] Button not found or disabled, aborting`);
-    return;
-  }
+  if (!clickedBtn || clickedBtn.disabled) return;
 
   // PERFORMANCE: Optimistic UI update - update UI immediately
   const originalText = clickedBtn.textContent;
@@ -1181,19 +1113,8 @@ async function handleSaveCreator(status = 'saved') {
     }
 
     const url = new URL(stored.GAS_URL);
-    // CRITICAL FIX: Ensure currentStatus is properly set
-    if (!currentStatus || currentStatus === 'loading') {
-      setCurrentStatus('new');
-    }
     const isNewCreator = currentStatus === 'new';
     const action = isNewCreator ? 'saveCreator' : 'updateCreatorStatus';
-
-    // DEBUG: Log action being called
-    console.log('[Creator Scout] Calling action:', action, 'Status:', status, 'currentStatus:', currentStatus);
-
-    // CRITICAL: Capture previous status BEFORE we update it
-    // Needed for reverting UI if GAS sync fails
-    const previousStatus = currentStatus;
 
     url.searchParams.append('action', action);
     url.searchParams.append('email', stored.SCOUT_EMAIL);
@@ -1209,248 +1130,107 @@ async function handleSaveCreator(status = 'saved') {
       url.searchParams.append('new_status', status);
     }
 
-    // INSTANT FEEDBACK: Update UI immediately WITHOUT waiting for GAS
-    // This makes the extension feel instant even though sync happens in background
+    const response = await fetch(url.toString());
+    const result = await response.json();
 
-    // 1. Update button statuses immediately
-    updateButtonStatus(status);
+    if (result.success || result.status === 'success') {
+      updateButtonStatus(status);
 
-    // 2. Update popup color class to match new status
-    const popup = document.getElementById('scout-widget-popup');
-    if (popup) {
-      popup.classList.remove('popup-saved', 'popup-hold', 'popup-locked-in');
-      if (status === 'saved') popup.classList.add('popup-saved');
-      else if (status === 'hold') popup.classList.add('popup-hold');
-      else if (status === 'locked_in') popup.classList.add('popup-locked-in');
+      // Update popup color class to match new status
+      const popup = document.getElementById('scout-widget-popup');
+      if (popup) {
+        popup.classList.remove('popup-saved', 'popup-hold', 'popup-locked-in');
+        if (status === 'saved') popup.classList.add('popup-saved');
+        else if (status === 'hold') popup.classList.add('popup-hold');
+        else if (status === 'locked_in') popup.classList.add('popup-locked-in');
+      }
+
+      // Update badge color class to match new status
+      const badge = document.querySelector('.creator-scout-widget .scout-badge');
+      if (badge) {
+        badge.classList.remove('badge-saved', 'badge-hold', 'badge-locked-in', 'badge-new', 'badge-error');
+        if (status === 'saved') badge.classList.add('badge-saved');
+        else if (status === 'hold') badge.classList.add('badge-hold');
+        else if (status === 'locked_in') badge.classList.add('badge-locked-in');
+      }
+
+      // Progressive state transitions: disable previous states, enable future ones
+      const statusOrder = ['saved', 'hold', 'locked_in'];
+      const currentIndex = statusOrder.indexOf(status);
+
+      statusButtons.forEach(btn => {
+        const btnStatus = btn.getAttribute('data-status');
+        const btnIndex = statusOrder.indexOf(btnStatus);
+
+        if (btnStatus === status) {
+          // Current button: mark active and disable
+          btn.classList.add('active');
+          btn.disabled = true;
+        } else if (btnIndex < currentIndex) {
+          // Previous states: disable and remove active
+          btn.classList.remove('active');
+          btn.disabled = true;
+        } else {
+          // Future states: enable and remove active
+          btn.classList.remove('active');
+          btn.disabled = false;
+        }
+        btn.textContent = getButtonLabel(btnStatus);
+      });
+
+      // CRITICAL FIX: Sync local runtime state after successful Save
+      // This ensures Hold/Lock work immediately without requiring page refresh
+      currentStatus = status;
+      if (currentCreatorData) {
+        currentCreatorData.status = status;
+      }
+
+      // CRITICAL FIX 3: Persist status to cache immediately after successful update
+      // Ensures status survives page refresh, page close, and opening in another tab
+      if (currentCreatorData && currentCreatorData.profile_url) {
+        chrome.storage.local.get(['CREATOR_STATUS_CACHE'], (result) => {
+          const cachedStatus = result.CREATOR_STATUS_CACHE || {};
+          cachedStatus[currentCreatorData.profile_url] = status;
+          chrome.storage.local.set({ CREATOR_STATUS_CACHE: cachedStatus });
+          console.log('[Creator Scout] Cached status for', currentCreatorData.profile_url, ':', status);
+        });
+      }
+
+      showSaveMessage(`Creator ${getStatusMessage(status)}!`, 'success');
+
+      // KEEP WIDGET OPEN: Widget stays open after Save/Hold/Lock
+      // Only close when user manually clicks X button
+      if (status === 'locked_in') {
+        showLockInPriceSection();
+      }
+    } else {
+      throw new Error(result.error || 'Save failed');
     }
+  } catch (error) {
+    const actionType = currentStatus === 'new' ? 'saving' : 'updating';
+    console.error(`Error ${actionType} creator:`, error);
+    showSaveMessage(`Error ${actionType} status: ${error.message}`, 'error');
 
-    // 3. Update badge color class to match new status
-    const badge = document.querySelector('.creator-scout-widget .scout-badge');
-    if (badge) {
-      badge.classList.remove('badge-saved', 'badge-hold', 'badge-locked-in', 'badge-new', 'badge-error');
-      if (status === 'saved') badge.classList.add('badge-saved');
-      else if (status === 'hold') badge.classList.add('badge-hold');
-      else if (status === 'locked_in') badge.classList.add('badge-locked-in');
-    }
-
-    // 4. Progressive state transitions: disable previous states, enable future ones
-    const statusOrder = ['saved', 'hold', 'locked_in'];
-    const currentIndex = statusOrder.indexOf(status);
-
+    // PERFORMANCE: Revert optimistic update on error
+    const lastStatus = currentStatus || 'new';
     statusButtons.forEach(btn => {
       const btnStatus = btn.getAttribute('data-status');
+      const statusOrder = ['saved', 'hold', 'locked_in'];
+      const lastIndex = statusOrder.indexOf(lastStatus);
       const btnIndex = statusOrder.indexOf(btnStatus);
 
-      if (btnStatus === status) {
+      btn.textContent = getButtonLabel(btnStatus);
+      if (btnStatus === lastStatus) {
         btn.classList.add('active');
         btn.disabled = true;
-      } else if (btnIndex < currentIndex) {
+      } else if (btnIndex < lastIndex) {
         btn.classList.remove('active');
         btn.disabled = true;
       } else {
         btn.classList.remove('active');
         btn.disabled = false;
       }
-      btn.textContent = getButtonLabel(btnStatus);
     });
-
-    // 5. Sync local runtime state immediately
-    setCurrentStatus(status, saveActionRequestId);
-    if (currentCreatorData) {
-      currentCreatorData.status = status;
-    }
-
-    // PERSIST STATUS to localStorage so it survives verification failures and page reloads
-    // Key: scout_status_{profile_url}
-    const profileUrl = currentCreatorData?.profile_url;
-    if (profileUrl) {
-      localStorage.setItem(`scout_status_${profileUrl}`, status);
-    }
-
-    // 6. Update cache immediately (before GAS sync)
-    // Store both status and found flag to prevent stale cache flashing
-    if (currentCreatorData && currentCreatorData.profile_url) {
-      chrome.storage.local.get(['CREATOR_STATUS_CACHE'], (result) => {
-        // RACE CONDITION FIX: Check if this request is still current
-        if (saveActionRequestId !== statusRequestId) {
-          console.log(`[CACHE WRITE] STALE_IGNORED | saveActionRequestId=${saveActionRequestId} | currentRequest=${statusRequestId}`);
-          return;
-        }
-        const cachedStatus = result.CREATOR_STATUS_CACHE || {};
-        cachedStatus[currentCreatorData.profile_url] = { status: status, found: true };
-        chrome.storage.local.set({ CREATOR_STATUS_CACHE: cachedStatus });
-        console.log(`[CACHE WRITE] CREATOR_STATUS_CACHE | profile=${currentCreatorData.profile_url} | status=${status} | requestId=${saveActionRequestId}`);
-      });
-    }
-
-    // 7. Show success message immediately (don't wait for GAS)
-    showSaveMessage(`Creator ${getStatusMessage(status)}!`, 'success');
-
-    // 8. Show lock price section immediately if locked
-    if (status === 'locked_in') {
-      showLockInPriceSection();
-    }
-
-    // NOW: Fire GAS sync in background (non-blocking, fire-and-forget)
-    // User gets instant feedback while sync happens silently
-    fetch(url.toString())
-      .then(response => response.json())
-      .then(result => {
-        // GAS succeeded - keep the state we already set
-        if (!(result.success || result.status === 'success')) {
-          throw new Error(result.error || 'Save failed');
-        }
-
-        // CRITICAL FIX: Verify status with GAS to ensure cache is correct
-        // This prevents cache inconsistencies from race conditions or failed optimistic updates
-        const verifyUrl = new URL(cachedSettings.GAS_URL);
-        verifyUrl.searchParams.append('action', 'getCreatorStatus');
-        verifyUrl.searchParams.append('email', cachedSettings.SCOUT_EMAIL);
-        verifyUrl.searchParams.append('profile_url', currentCreatorData.profile_url);
-
-        const verifyController = new AbortController();
-        const verifyTimeout = setTimeout(() => verifyController.abort(), 5000);
-
-        fetch(verifyUrl.toString(), { signal: verifyController.signal })
-          .then(verifyResponse => verifyResponse.json())
-          .then(verifyResult => {
-            clearTimeout(verifyTimeout);
-
-            // RACE CONDITION FIX: Check if this verification is stale
-            if (saveActionRequestId !== statusRequestId) {
-              console.log(`[STATUS REQUEST ${saveActionRequestId}] STALE verification - current is ${statusRequestId}, ignoring`);
-              return;
-            }
-
-            // CRITICAL: Check if creator exists (found flag)
-            if (verifyResult && verifyResult.found === false) {
-              // Creator not found in sheet - save probably failed silently
-              console.error('Verification failed:', {
-                scoutEmail: cachedSettings.SCOUT_EMAIL,
-                profileUrl: currentCreatorData?.profile_url,
-                verifyResult: verifyResult,
-                error: verifyResult.error
-              });
-              // Revert optimistic state since creator doesn't actually exist
-              setCurrentStatus(previousStatus, saveActionRequestId);
-              console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=${previousStatus} | source=handleSaveCreator:verify_failure | requestId=${saveActionRequestId}`);
-              window.__scoutWidgetStatus = previousStatus;
-              updateButtonStatus(previousStatus);
-              // CRITICAL: Clear the persistent status so next attempt starts fresh
-              if (currentCreatorData?.profile_url) {
-                localStorage.removeItem(`scout_status_${currentCreatorData.profile_url}`);
-              }
-              const errorMsg = verifyResult.error ? `Error: ${verifyResult.error}` : 'Error: Creator could not be saved to sheet';
-              showSaveMessage(errorMsg, 'error');
-              return;
-            }
-
-            // Update cache with verified GAS status (source of truth)
-            if (verifyResult && verifyResult.status) {
-              chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (res) => {
-                // RACE CONDITION FIX: Check if this cache update is still current
-                if (saveActionRequestId !== statusRequestId) {
-                  console.log(`[STATUS REQUEST ${saveActionRequestId}] STALE verification cache update - current is ${statusRequestId}, ignoring`);
-                  return;
-                }
-
-                const cachedStatus = res.CREATOR_STATUS_CACHE || {};
-                const cachedPrices = res.CREATOR_LOCK_IN_PRICE_CACHE || {};
-                const profileUrl = currentCreatorData.profile_url;
-
-                // Update cache with verified status from GAS
-                console.log(`[CACHE WRITE] VERIFY | profile=${profileUrl} | verifyStatus=${verifyResult.status} | requestId=${saveActionRequestId}`);
-                cachedStatus[profileUrl] = {
-                  status: verifyResult.status,
-                  found: true
-                };
-
-                // Update lock-in price if it exists
-                if (verifyResult.lock_in_price) {
-                  cachedPrices[profileUrl] = verifyResult.lock_in_price;
-                } else {
-                  delete cachedPrices[profileUrl];
-                }
-
-                chrome.storage.local.set({
-                  CREATOR_STATUS_CACHE: cachedStatus,
-                  CREATOR_LOCK_IN_PRICE_CACHE: cachedPrices
-                });
-
-                // Update UI if status differs from optimistic update
-                if (verifyResult.status !== status) {
-                  console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=${verifyResult.status} | source=handleSaveCreator:verify_differs | requestId=${saveActionRequestId}`);
-                  window.__scoutWidgetStatus = verifyResult.status;
-                  setCurrentStatus(verifyResult.status, saveActionRequestId);
-                  updateButtonStatus(verifyResult.status);
-                }
-              });
-            }
-          })
-          .catch(() => {
-            clearTimeout(verifyTimeout);
-            // Verification timeout or failed - cache already updated optimistically
-          });
-      })
-      .catch(error => {
-        // GAS failed - revert UI and cache to previous state
-        console.error(`Error saving creator:`, error);
-
-        // Revert button state to previous status (before this change)
-        updateButtonStatus(previousStatus);
-
-        // Revert popup and badge colors
-        const popup = document.getElementById('scout-widget-popup');
-        if (popup) {
-          popup.classList.remove('popup-saved', 'popup-hold', 'popup-locked-in');
-          if (previousStatus === 'saved') popup.classList.add('popup-saved');
-          else if (previousStatus === 'hold') popup.classList.add('popup-hold');
-          else if (previousStatus === 'locked_in') popup.classList.add('popup-locked-in');
-
-          // Remove lock price section if we're reverting from locked_in
-          if (status === 'locked_in' && previousStatus !== 'locked_in') {
-            const priceSection = popup.querySelector('.scout-lock-price-section');
-            if (priceSection) {
-              priceSection.remove();
-            }
-          }
-        }
-
-        const badge = document.querySelector('.creator-scout-widget .scout-badge');
-        if (badge) {
-          badge.classList.remove('badge-saved', 'badge-hold', 'badge-locked-in', 'badge-new', 'badge-error');
-          if (previousStatus === 'saved') badge.classList.add('badge-saved');
-          else if (previousStatus === 'hold') badge.classList.add('badge-hold');
-          else if (previousStatus === 'locked_in') badge.classList.add('badge-locked-in');
-        }
-
-        // Revert cache
-        setCurrentStatus(previousStatus, saveActionRequestId);
-        if (currentCreatorData && currentCreatorData.profile_url) {
-          chrome.storage.local.get(['CREATOR_STATUS_CACHE'], (result) => {
-            // RACE CONDITION FIX: Check if this revert is still current
-            if (saveActionRequestId !== statusRequestId) {
-              console.log(`[STATUS REQUEST ${saveActionRequestId}] STALE error revert - current is ${statusRequestId}, ignoring`);
-              return;
-            }
-            const cachedStatus = result.CREATOR_STATUS_CACHE || {};
-            // Revert to previous cache entry format
-            // If previousStatus was stored in new format, restore with found flag
-            cachedStatus[currentCreatorData.profile_url] = { status: previousStatus, found: true };
-            chrome.storage.local.set({ CREATOR_STATUS_CACHE: cachedStatus });
-            console.log(`[STATUS REQUEST ${saveActionRequestId}] Reverted status to: ${previousStatus}`);
-          });
-        }
-
-        // Show error message
-        showSaveMessage(`Error saving status: ${error.message}`, 'error');
-      });
-  } catch (error) {
-    console.error('Error in handleSaveCreator:', error);
-    showSaveMessage(`Error: ${error.message}`, 'error');
-    // Revert button state on any unexpected error
-    clickedBtn.disabled = false;
-    clickedBtn.textContent = getButtonLabel(currentStatus);
   }
 }
 
@@ -1778,26 +1558,12 @@ function showSaveMessage(text, type) {
 
 // Check creator status and show floating button (instant shell rendering)
 function checkAndShowWidget() {
-  // CRITICAL FIX: Check if profile has CHANGED
-  // If URL changed but widget still exists, we must re-fetch status (not use stale widget)
-  const currentUrl = window.location.href;
-  const profileChanged = currentUrl !== lastProfileUrl;
-
   // Check if widget already exists (singleton pattern)
-  if (ensureSingletonWidget() && !profileChanged) {
-    // Widget already mounted for SAME profile, just ensure it's visible
+  if (ensureSingletonWidget()) {
+    // Widget already mounted, just ensure it's visible
     widgetInstance.style.display = 'flex';
     return;
   }
-
-  // Profile changed or widget doesn't exist - remove old widget and fetch new status
-  if (profileChanged && widgetInstance) {
-    widgetInstance.remove();
-    widgetInstance = null;
-  }
-
-  // Update lastProfileUrl so next check knows current profile
-  lastProfileUrl = currentUrl;
 
   // Fast path: Check if configured using cached settings (no blocking await)
   if (!cachedSettings.SCOUT_EMAIL || !cachedSettings.GAS_URL || !cachedSettings.PERSONAL_SHEET_ID) {
@@ -1810,10 +1576,7 @@ function checkAndShowWidget() {
   }
 
   // INSTANT: Mount empty widget shell immediately (~0ms)
-  // Show 'loading' status initially so user sees purple loading state, not blue
-  console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=loading | source=checkAndShowWidget:mount`);
-  window.__scoutWidgetStatus = 'loading';
-  setCurrentStatus('new'); // Track actual status internally (new until we get response from GAS)
+  window.__scoutWidgetStatus = 'new';
   window.__scoutWidgetPrice = null;
   createFloatingButton();
   widgetInstance = getExistingWidget();
@@ -1847,15 +1610,31 @@ function checkAndShowWidget() {
     // This ensures that when SPA navigation happens, it can properly detect profile changes
     lastProfileUrl = window.location.href;
 
-    // CRITICAL FIX: Always show loading state until we confirm from GAS
-    // This prevents flashing stale status and ensures we always show the source of truth
-    showLoadingStatus();
+    // CRITICAL FIX 3: Load cached status immediately for persistence across refreshes
+    chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (result) => {
+      const cachedStatus = result.CREATOR_STATUS_CACHE || {};
+      const cachedPrices = result.CREATOR_LOCK_IN_PRICE_CACHE || {};
+      const profileKey = creatorData.profile_url;
 
-    const profileKey = creatorData.profile_url;
+      if (cachedStatus[profileKey]) {
+        window.__scoutWidgetStatus = cachedStatus[profileKey];
+        currentStatus = cachedStatus[profileKey];
+        updateButtonStatus(window.__scoutWidgetStatus);
+      }
+
+      // Cache price for later use
+      if (cachedPrices[profileKey]) {
+        window.__scoutWidgetPrice = cachedPrices[profileKey];
+      }
+    });
+
+    // Fetch actual scouted status in background
     const url = new URL(cachedSettings.GAS_URL);
     url.searchParams.append('action', 'getCreatorStatus');
     url.searchParams.append('email', cachedSettings.SCOUT_EMAIL);
-    url.searchParams.append('profile_url', profileKey);
+    url.searchParams.append('profile_url', creatorData.profile_url);
+
+    showLoadingStatus();
 
     // Fetch with 10-second timeout to prevent stuck loading state
     const fetchController = new AbortController();
@@ -1865,7 +1644,6 @@ function checkAndShowWidget() {
       .then(response => response.json())
       .then(result => {
         clearTimeout(fetchTimeout);
-
         // RACE CONDITION FIX: Validate this response is not stale
         // If activeProfileRequestId has changed, a new profile was loaded while this fetch was pending
         if (requestId !== activeProfileRequestId) {
@@ -1874,124 +1652,55 @@ function checkAndShowWidget() {
         }
 
         removeLoadingStatus();
-
-        // CRITICAL FIX: Handle deleted creators
-        // If creator is not found in sheets, FORCE COMPLETE UI RESET to 'new'
-        // Do not just update classes - completely reset the widget state
-        if (result && result.found === false) {
-          // Creator was deleted - IMMEDIATELY clear ALL state and caches
-          localStorage.removeItem(`scout_status_${profileKey}`);
-
-          chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (cacheRes) => {
-            const cachedStatus = cacheRes.CREATOR_STATUS_CACHE || {};
-            const cachedPrices = cacheRes.CREATOR_LOCK_IN_PRICE_CACHE || {};
-            delete cachedStatus[profileKey];
-            delete cachedPrices[profileKey];
-            chrome.storage.local.set({
-              CREATOR_STATUS_CACHE: cachedStatus,
-              CREATOR_LOCK_IN_PRICE_CACHE: cachedPrices
-            });
-          });
-
-          // FORCE COMPLETE UI RESET - not just button update
-          console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=new | source=checkAndShowWidget:deleted_creator_callback`);
-          window.__scoutWidgetStatus = 'new';
-          setCurrentStatus('new');
-          window.__scoutWidgetPrice = null;
-
-          // Get the button and COMPLETELY RESET it
-          const btn = document.querySelector('.scout-floating-button');
-          if (btn) {
-            // Remove ALL status classes and loading class
-            btn.classList.remove('scout-loading', 'status-new', 'status-saved', 'status-hold', 'status-locked_in', 'status-error', 'status-loading');
-            // Add ONLY the new status class
-            btn.classList.add('status-new');
-            // Reset text
-            const textEl = btn.querySelector('.scout-button-text');
-            if (textEl) {
-              textEl.textContent = 'Scout';
-            }
-            // Reset title
-            btn.title = 'Scout Creator';
-          }
-
-          // Close any open popup
-          const popup = document.getElementById('scout-widget-popup');
-          if (popup) {
-            popup.classList.remove('scout-popup-open');
-            setTimeout(() => popup.remove(), 200);
-          }
-
-          return;
+        // Handle new format: { status: 'new' | 'saved' | 'hold' | 'locked_in' }
+        let newStatus = 'new';
+        if (result && result.status) {
+          newStatus = result.status;
         }
 
-        // Get actual status from GAS (source of truth)
-        // Use ONLY the GAS response, never fall back to cache
-        let newStatus = result?.status || 'new';
-        const lockInPrice = result?.lock_in_price || null;
-
-        // FORCE COMPLETE UI UPDATE - reset all state and apply GAS response
-        console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=${newStatus} | source=checkAndShowWidget:gas_response_callback | gasStatus=${result?.status}`);
         window.__scoutWidgetStatus = newStatus;
-        setCurrentStatus(newStatus);
-        window.__scoutWidgetPrice = lockInPrice;
+        currentStatus = newStatus;
 
-        // Get the button and COMPLETELY RESET it with new status
-        const btn = document.querySelector('.scout-floating-button');
-        if (btn) {
-          // Remove ALL old status classes and loading class
-          btn.classList.remove('scout-loading', 'status-new', 'status-saved', 'status-hold', 'status-locked_in', 'status-error', 'status-loading');
-          // Add ONLY the correct status class
-          btn.classList.add(`status-${newStatus}`);
-          // Reset text
-          const textEl = btn.querySelector('.scout-button-text');
-          if (textEl) {
-            textEl.textContent = 'Scout';
-          }
-          // Update title based on status
-          const titleText = newStatus === 'saved' ? 'Creator Already Saved' : newStatus === 'hold' ? 'Creator On Hold' : newStatus === 'locked_in' ? 'Creator Locked In' : 'Scout Creator';
-          btn.title = titleText;
-        }
-
-        // Update cache and localStorage with CONFIRMED status from GAS
-        // This is for future loads, but UI is already updated from GAS
+        // Update cache - but clear if creator not found in sheets (was deleted)
         chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (res) => {
           const cachedStatus = res.CREATOR_STATUS_CACHE || {};
           const cachedPrices = res.CREATOR_LOCK_IN_PRICE_CACHE || {};
+          const profileUrl = creatorData.profile_url;
 
-          // Update cache with confirmed status from GAS (source of truth)
-          cachedStatus[profileKey] = { status: newStatus, found: true };
-
-          // Update or clear lock-in price based on GAS response
-          if (lockInPrice) {
-            cachedPrices[profileKey] = lockInPrice;
+          // If creator not found in sheets, clear stale cache for this creator
+          if (result && result.found === false) {
+            delete cachedStatus[profileUrl];
+            delete cachedPrices[profileUrl];
+            window.__scoutWidgetPrice = null;
           } else {
-            delete cachedPrices[profileKey];
+            // Creator exists in sheets - update with latest data
+            cachedStatus[profileUrl] = newStatus;
+
+            // LOCK-IN PRICE: Cache price if returned from GAS
+            if (result && result.lock_in_price) {
+              cachedPrices[profileUrl] = result.lock_in_price;
+              window.__scoutWidgetPrice = result.lock_in_price;
+            } else {
+              // Creator exists but no price - clear stale price
+              delete cachedPrices[profileUrl];
+              window.__scoutWidgetPrice = null;
+            }
           }
 
           chrome.storage.local.set({
             CREATOR_STATUS_CACHE: cachedStatus,
             CREATOR_LOCK_IN_PRICE_CACHE: cachedPrices
           });
-
-          console.log('[Creator Scout] Cache updated with GAS response:', {
-            profileUrl: profileKey,
-            status: newStatus,
-            price: lockInPrice
-          });
         });
 
-        // Update localStorage with confirmed status for persistence across pages
-        localStorage.setItem(`scout_status_${profileKey}`, newStatus);
+        updateButtonStatus(window.__scoutWidgetStatus);
       })
       .catch(error => {
         clearTimeout(fetchTimeout);
-        clearTimeout(showLoadingTimer);
         console.error('Error checking widget status:', error);
         removeLoadingStatus();
         // CRITICAL FIX: Set default status to 'new' on fetch failure
         // Prevents currentStatus from remaining null, which causes buttons to use wrong API action
-        console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=new | source=checkAndShowWidget:fetch_error_fallback | error=${error.message}`);
         window.__scoutWidgetStatus = 'new';
         currentStatus = 'new';
         updateButtonStatus('new');
@@ -2018,96 +1727,14 @@ function checkAndShowWidget() {
         .then(response => response.json())
         .then(result => {
           clearTimeout(fallbackTimeout);
-
-          // Handle deleted creators - FORCE COMPLETE UI RESET
-          if (result && result.found === false) {
-            const fallbackProfileKey = syncData.profile_url;
-            localStorage.removeItem(`scout_status_${fallbackProfileKey}`);
-
-            chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (cacheRes) => {
-              const cachedStatus = cacheRes.CREATOR_STATUS_CACHE || {};
-              const cachedPrices = cacheRes.CREATOR_LOCK_IN_PRICE_CACHE || {};
-              delete cachedStatus[fallbackProfileKey];
-              delete cachedPrices[fallbackProfileKey];
-              chrome.storage.local.set({
-                CREATOR_STATUS_CACHE: cachedStatus,
-                CREATOR_LOCK_IN_PRICE_CACHE: cachedPrices
-              });
-            });
-
-            console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=new | source=checkAndShowWidget:fallback_deleted_creator | gasFound=false`);
-            window.__scoutWidgetStatus = 'new';
-            currentStatus = 'new';
-            window.__scoutWidgetPrice = null;
-
-            const btn = document.querySelector('.scout-floating-button');
-            if (btn) {
-              btn.classList.remove('scout-loading', 'status-new', 'status-saved', 'status-hold', 'status-locked_in', 'status-error', 'status-loading');
-              btn.classList.add('status-new');
-              const textEl = btn.querySelector('.scout-button-text');
-              if (textEl) {
-                textEl.textContent = 'Scout';
-              }
-              btn.title = 'Scout Creator';
-            }
-
-            const popup = document.getElementById('scout-widget-popup');
-            if (popup) {
-              popup.classList.remove('scout-popup-open');
-              setTimeout(() => popup.remove(), 200);
-            }
-
-            return;
-          }
-
           if (result && result.status) {
-            const fallbackProfileKey = syncData.profile_url;
-            const fallbackStatus = result.status;
-            const fallbackPrice = result.lock_in_price || null;
-
-            // FORCE COMPLETE UI UPDATE - reset all state and apply GAS response
-            console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=${fallbackStatus} | source=checkAndShowWidget:fallback_gas_response | gasStatus=${result.status}`);
-            window.__scoutWidgetStatus = fallbackStatus;
-            currentStatus = fallbackStatus;
-            window.__scoutWidgetPrice = fallbackPrice;
-
-            const btn = document.querySelector('.scout-floating-button');
-            if (btn) {
-              btn.classList.remove('scout-loading', 'status-new', 'status-saved', 'status-hold', 'status-locked_in', 'status-error', 'status-loading');
-              btn.classList.add(`status-${fallbackStatus}`);
-              const textEl = btn.querySelector('.scout-button-text');
-              if (textEl) {
-                textEl.textContent = 'Scout';
-              }
-              const titleText = fallbackStatus === 'saved' ? 'Creator Already Saved' : fallbackStatus === 'hold' ? 'Creator On Hold' : fallbackStatus === 'locked_in' ? 'Creator Locked In' : 'Scout Creator';
-              btn.title = titleText;
-            }
-
-            // Update cache with confirmed status from GAS
-            chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (res) => {
-              const cachedStatus = res.CREATOR_STATUS_CACHE || {};
-              const cachedPrices = res.CREATOR_LOCK_IN_PRICE_CACHE || {};
-
-              cachedStatus[fallbackProfileKey] = { status: fallbackStatus, found: true };
-
-              if (fallbackPrice) {
-                cachedPrices[fallbackProfileKey] = fallbackPrice;
-              } else {
-                delete cachedPrices[fallbackProfileKey];
-              }
-
-              chrome.storage.local.set({
-                CREATOR_STATUS_CACHE: cachedStatus,
-                CREATOR_LOCK_IN_PRICE_CACHE: cachedPrices
-              });
-            });
-
-            localStorage.setItem(`scout_status_${fallbackProfileKey}`, fallbackStatus);
+            window.__scoutWidgetStatus = result.status;
+            currentStatus = result.status;
+            updateButtonStatus(result.status);
           }
         })
         .catch(e => {
           clearTimeout(fallbackTimeout);
-          console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=new | source=checkAndShowWidget:fallback_error | error=${e.message}`);
           window.__scoutWidgetStatus = 'new';
           currentStatus = 'new';
           updateButtonStatus('new');
@@ -2162,69 +1789,46 @@ function updateWidgetCreatorData(creatorData) {
 }
 
 // Update widget status display (saved/new/error)
-function updateWidgetStatus(statusData, requestId) {
+function updateWidgetStatus(statusData) {
   const btn = document.querySelector('.scout-floating-button');
-
-  // Get caller info for forensic tracing
-  const stack = new Error().stack.split('\n');
-  const caller = stack[2] ? stack[2].trim() : 'unknown';
-
   if (!btn) {
-    console.log(`[STATUS UI UPDATE] NOT_FOUND | requestId=${requestId || 'SYNC'} | source=${caller}`);
+    console.log('[Scout] updateWidgetStatus: button not found');
     return;
   }
 
-  console.log(`[STATUS UI UPDATE] input=${JSON.stringify(statusData)} | requestId=${requestId || 'SYNC'} | source=${caller}`);
+  console.log('[Scout] updateWidgetStatus called with:', statusData);
 
-  // RACE CONDITION FIX: Ignore stale requests
-  if (requestId !== undefined && requestId !== statusRequestId) {
-    console.log(`[STATUS UI UPDATE] STALE_IGNORED | requestId=${requestId} | currentRequest=${statusRequestId}`);
-    return;
-  }
-
-  // CRITICAL FIX: Ensure we extract the status string, never assign objects
-  let statusString = null;
-
-  // Handle format: { status: 'loading' | 'new' | 'saved' | 'hold' | 'locked_in' }
-  if (statusData && typeof statusData.status === 'string') {
-    statusString = statusData.status;
+  // Handle new format: { status: 'loading' | 'new' | 'saved' }
+  if (statusData && statusData.status) {
+    window.__scoutWidgetStatus = statusData.status;
+    if (statusData.status !== 'loading') {
+      currentStatus = statusData.status;
+    }
+    console.log('[Scout] Widget status set to:', statusData.status);
+    if (statusData.status === 'loading') {
+      console.log('[Scout] Showing loading status');
+      showLoadingStatus();
+    } else {
+      console.log('[Scout] Removing loading status');
+      removeLoadingStatus();
+    }
+    updateButtonStatus(window.__scoutWidgetStatus);
   }
   // Handle old format: { exists: boolean }
   else if (statusData && statusData.hasOwnProperty('exists')) {
-    statusString = statusData.exists ? 'saved' : 'new';
+    window.__scoutWidgetStatus = statusData.exists ? 'saved' : 'new';
+    currentStatus = window.__scoutWidgetStatus;
+    console.log('[Scout] Widget status set to (old format):', window.__scoutWidgetStatus);
+    updateButtonStatus(window.__scoutWidgetStatus);
   }
-  // Invalid format - default to 'new'
+  // CRITICAL FIX: Default to 'new' if response format is unexpected
   else {
-    console.warn(`[STATUS REQUEST ${requestId || 'SYNC'}] updateWidgetStatus: invalid format:`, statusData, '- defaulting to new');
-    statusString = 'new';
-  }
-
-  // CRITICAL: Validate status is one of the allowed values
-  const validStatuses = ['new', 'saved', 'hold', 'locked_in', 'loading', 'error'];
-  if (!validStatuses.includes(statusString)) {
-    console.warn(`[STATUS REQUEST ${requestId || 'SYNC'}] updateWidgetStatus: invalid status value:`, statusString, '- defaulting to new');
-    statusString = 'new';
-  }
-
-  // Update window state
-  window.__scoutWidgetStatus = statusString;
-
-  // Update currentStatus only if not loading
-  if (statusString !== 'loading') {
-    setCurrentStatus(statusString, requestId);
-  }
-
-  console.log(`[STATUS UI UPDATE] APPLIED | status=${statusString} | currentStatus=${currentStatus} | window.__scoutWidgetStatus=${window.__scoutWidgetStatus}`);
-
-  // Handle loading state
-  if (statusString === 'loading') {
-    showLoadingStatus();
-  } else {
+    console.warn('[Scout] updateWidgetStatus: unexpected format:', statusData, '- defaulting to new');
+    window.__scoutWidgetStatus = 'new';
+    currentStatus = 'new';
     removeLoadingStatus();
+    updateButtonStatus('new');
   }
-
-  // Update button UI
-  updateButtonStatus(statusString);
 }
 
 // Check if current page is a supported creator profile
@@ -2254,10 +1858,9 @@ function checkIfSupportedCreatorPage() {
 // Fetch creator status from GAS (used by handleProfileChange flow)
 async function fetchCreatorStatus(creatorData) {
   const url = new URL(cachedSettings.GAS_URL);
-  url.searchParams.append('action', 'checkCreatorStatus');
+  url.searchParams.append('action', 'getCreatorStatus');
   url.searchParams.append('email', cachedSettings.SCOUT_EMAIL);
   url.searchParams.append('profile_url', creatorData.profile_url);
-  url.searchParams.append('personal_sheet_id', cachedSettings.PERSONAL_SHEET_ID);
 
   // Timeout protection: fail if fetch takes more than 10 seconds
   return Promise.race([
@@ -2290,16 +1893,12 @@ async function handleProfileChange() {
 
   const currentUrl = window.location.href;
   if (currentUrl === lastProfileUrl) {
-    console.log(`[PROFILE CHANGE] NO_CHANGE | url=${currentUrl}`);
     return;
   }
-
-  console.log(`[PROFILE CHANGE] old=${lastProfileUrl} | new=${currentUrl}`);
 
   // Close any open widget popup when profile changes - remove immediately
   const openPopup = document.getElementById('scout-widget-popup');
   if (openPopup) {
-    console.log(`[PROFILE CHANGE] Closing open popup`);
     openPopup.remove();
   }
 
@@ -2308,10 +1907,8 @@ async function handleProfileChange() {
   const currentPlatform = detectCurrentPlatform();
 
   if (lastPlatform && lastPlatform !== currentPlatform) {
-    console.log(`[PROFILE CHANGE] PLATFORM_CHANGE | old=${lastPlatform} | new=${currentPlatform}`);
     const widget = getExistingWidget();
     if (widget) {
-      console.log(`[WIDGET DESTROYED] Platform changed, removing widget`);
       widget.remove();
     }
     widgetInstance = null;
@@ -2333,33 +1930,25 @@ async function handleProfileChange() {
   }
 
   widgetInstance = widget;
-  const profileRequestId = ++activeProfileRequestId;
-
-  // CRITICAL FIX: Create NEW status request ID for this status restoration
-  // This prevents stale status callbacks from overwriting newer status
-  const statusReqId = ++statusRequestId;
-  console.log(`[STATUS REQUEST ${statusReqId}] [STATUS REQUEST START] Initializing status restoration`);
+  const requestId = ++activeProfileRequestId;
 
   currentCreatorData = null;
   lastFetchedStatus = null;
-  console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${currentStatus} | newStatus=null | source=handleProfileChange:reset`);
   currentStatus = null;
-  console.log(`[STATUS ASSIGN] DIRECT | oldStatus=${window.__scoutWidgetStatus} | newStatus=new | source=handleProfileChange:reset`);
   window.__scoutWidgetStatus = 'new';
   window.__scoutWidgetPrice = null;
 
-  updateWidgetStatus({ status: 'loading' }, statusReqId);
+  updateWidgetStatus({ status: 'loading' });
   await new Promise(r => setTimeout(r, 400));
 
   const creatorData = await extractCreatorInfoAsync();
 
-  if (profileRequestId !== activeProfileRequestId) {
-    console.log(`[STATUS REQUEST ${statusReqId}] Profile changed during extraction, aborting status restoration`);
+  if (requestId !== activeProfileRequestId) {
     return;
   }
 
   if (!creatorData) {
-    updateWidgetStatus({ status: 'error' }, statusReqId);
+    updateWidgetStatus({ status: 'error' });
     return;
   }
 
@@ -2367,75 +1956,35 @@ async function handleProfileChange() {
   window.__currentCreatorData = creatorData;
   updateWidgetCreatorData(creatorData);
 
-  // CRITICAL FIX: Do NOT apply cached status to UI during initial load
-  // This prevents showing old cached status for deleted creators
-  // Only GAS response is applied to UI - it's the source of truth
-  // Cache read is only for diagnostics and for prices
-  chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (result) => {
-    console.log(`[CACHE READ] CREATOR_STATUS_CACHE | requestId=${statusReqId}`);
-
-    // RACE CONDITION FIX: Check if this request is stale
-    if (statusReqId !== statusRequestId) {
-      console.log(`[CACHE READ] STALE_IGNORED | cacheRequestId=${statusReqId} | currentRequest=${statusRequestId}`);
-      return;
-    }
-
-    const cachedStatus = result.CREATOR_STATUS_CACHE || {};
-    const cachedPrices = result.CREATOR_LOCK_IN_PRICE_CACHE || {};
-    const profileKey = creatorData.profile_url;
-
-    if (cachedStatus[profileKey]) {
-      // Read cache for diagnostics only, but DO NOT apply to UI
-      const cachedStatusObj = cachedStatus[profileKey];
-      const statusString = typeof cachedStatusObj === 'string' ? cachedStatusObj : cachedStatusObj.status;
-      console.log(`[CACHE READ] DIAGNOSTIC_ONLY | profile=${profileKey} | cachedStatus=${statusString} | (NOT APPLIED TO UI)`);
-    } else {
-      console.log(`[CACHE READ] profile=${profileKey} | NO_CACHE_ENTRY`);
-    }
-
-    // Only apply cached PRICE, not status
-    if (cachedPrices[profileKey]) {
-      window.__scoutWidgetPrice = cachedPrices[profileKey];
-      console.log(`[CACHE READ] PRICE_APPLIED | price=${cachedPrices[profileKey]}`);
-    }
-  });
+  // CRITICAL FIX: Do NOT load from cache during profile change
+  // Cache might be corrupted. Wait for GAS to return the authoritative status.
+  // Only GAS response updates the widget during navigation.
 
   const statusPromise = fetchCreatorStatus(creatorData);
 
   try {
     const status = await statusPromise;
 
-    if (profileRequestId !== activeProfileRequestId) {
-      console.log(`[STATUS REQUEST ${statusReqId}] Profile changed during GAS fetch, aborting`);
+    if (requestId !== activeProfileRequestId) {
       return;
     }
 
     lastFetchedStatus = status;
 
     if (currentCreatorData && currentCreatorData.profile_url) {
-      // CRITICAL: Capture statusReqId in closure
       chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (res) => {
-        // RACE CONDITION FIX: Check if this request is stale before updating
-        if (statusReqId !== statusRequestId) {
-          console.log(`[STATUS REQUEST ${statusReqId}] STALE GAS update callback - current is ${statusRequestId}, ignoring`);
-          return;
-        }
-
         const cachedStatus = res.CREATOR_STATUS_CACHE || {};
         const cachedPrices = res.CREATOR_LOCK_IN_PRICE_CACHE || {};
         const profileUrl = currentCreatorData.profile_url;
 
         // If creator not found in sheets, clear stale cache
         if (status && status.found === false) {
-          console.log(`[CACHE WRITE] GAS found=false, clearing cache | profile=${profileUrl} | requestId=${statusReqId}`);
           delete cachedStatus[profileUrl];
           delete cachedPrices[profileUrl];
           window.__scoutWidgetPrice = null;
         } else if (status && status.status) {
           // Creator exists - update with latest data
-          // CRITICAL FIX: Store status as object with { status, found } for consistency
-          console.log(`[CACHE WRITE] GAS found=true | profile=${profileUrl} | status=${status.status} | requestId=${statusReqId}`);
-          cachedStatus[profileUrl] = { status: status.status, found: true };
+          cachedStatus[profileUrl] = status.status;
 
           if (status.lock_in_price) {
             cachedPrices[profileUrl] = status.lock_in_price;
@@ -2454,29 +2003,10 @@ async function handleProfileChange() {
       });
     }
 
-    // Log GAS response for forensics
-    console.log(`[GAS RESPONSE] profile=${currentCreatorData.profile_url} | gasResponse=${JSON.stringify(status)} | requestId=${statusReqId}`);
-
-    // CRITICAL FIX: Pass consistent object format to updateWidgetStatus with request ID
-    // status from GAS is { status: 'saved', found: true, lock_in_price: ... }
-    // updateWidgetStatus expects { status: 'saved' }
-    if (status && status.found === false) {
-      console.log(`[GAS RESPONSE] found=false, setting to new | requestId=${statusReqId}`);
-      updateWidgetStatus({ status: 'new' }, statusReqId);
-    } else if (status && status.status) {
-      console.log(`[GAS RESPONSE] found=true, status=${status.status} | requestId=${statusReqId}`);
-      updateWidgetStatus({ status: status.status }, statusReqId);
-    } else {
-      console.log(`[GAS RESPONSE] invalid response, setting to new | requestId=${statusReqId}`);
-      updateWidgetStatus({ status: 'new' }, statusReqId);
-    }
+    updateWidgetStatus(status);
   } catch (err) {
-    if (profileRequestId !== activeProfileRequestId) {
-      console.log(`[GAS RESPONSE] ERROR - profile changed during fetch, aborting | requestId=${statusReqId}`);
-      return;
-    }
-    console.log(`[GAS RESPONSE] ERROR - ${err.message} | requestId=${statusReqId}`);
-    updateWidgetStatus({ status: 'new' }, statusReqId);
+    if (requestId !== activeProfileRequestId) return;
+    updateWidgetStatus({ status: 'new' });
   }
 }
 

@@ -6,54 +6,15 @@
 const MASTER_SHEET_NAME = 'Master';
 const SCOUTS_SHEET_NAME = 'Scouts';
 
-// PERFORMANCE OPTIMIZATION: Targeted creator row lookup (not full index)
-// Cache individual creator row numbers instead of building full index
-// This avoids expensive sheet scans for single lookups
-function getCreatorRowNumber(scoutId, profileUrl) {
-  // RESTORED: Never cache row numbers - they become invalid when earlier rows are deleted!
-  // Always do a fresh lookup from the sheet.
-  // Correctness > Performance
-
-  const { masterSheet } = ensureMasterSheets();
-
-  const lastRow = masterSheet.getLastRow();
-  if (lastRow <= 1) {
-    console.log(`[GAS ROW LOOKUP] scoutId=${scoutId} | profileUrl=${profileUrl} | result=null (no data)`);
-    return null; // No data rows
-  }
-
-  // Read only columns A-B for speed (avoid full row reads)
-  const range = masterSheet.getRange(2, 1, lastRow - 1, 2);
-  const data = range.getValues();
-
-  // Find the LATEST matching row (return last match, not first)
-  // If duplicate rows exist, the newest one is at the bottom
-  let lastMatchingRow = null;
-  const allMatches = [];
-
-  for (let i = 0; i < data.length; i++) {
-    if (data[i][0] === scoutId && data[i][1] === profileUrl) {
-      const actualRowNum = i + 2; // Row numbers start at 1, data starts at row 2
-      allMatches.push(actualRowNum);
-      lastMatchingRow = actualRowNum;
-    }
-  }
-
-  // Log all matches for forensics
-  if (allMatches.length > 0) {
-    console.log(`[GAS ROW LOOKUP] scoutId=${scoutId} | profileUrl=${profileUrl} | matchCount=${allMatches.length} | allRows=${allMatches.join(',')} | returning=${lastMatchingRow}`);
-  } else {
-    console.log(`[GAS ROW LOOKUP] scoutId=${scoutId} | profileUrl=${profileUrl} | result=null (no match)`);
-  }
-
-  return lastMatchingRow;
-}
-
-// Invalidate creator row reference when scout's data changes
-function invalidateCreatorIndex(scoutId) {
-  // Note: We don't invalidate individual creator rows here anymore
-  // Rows are only invalidated when status changes, which is rare
-  // This keeps the optimization working
+// CRITICAL: Normalize profile URLs to ensure consistent lookups
+// Removes query params, tracking codes, and trailing slashes
+function normalizeProfileUrl(url) {
+  if (!url) return url;
+  // Remove query params and fragments
+  url = url.split('?')[0].split('#')[0];
+  // Remove trailing slash
+  url = url.replace(/\/$/, '');
+  return url;
 }
 
 // Ensure Master and Scouts sheets exist with proper headers
@@ -178,14 +139,6 @@ function doGet(e) {
 
 function validateScoutEmail(email) {
   try {
-    const cache = CacheService.getScriptCache();
-    const cacheKey = `scout_valid_${email.trim().toLowerCase()}`;
-    const cachedResult = cache.get(cacheKey);
-
-    if (cachedResult !== null) {
-      return cachedResult === 'true';
-    }
-
     const { scoutsSheet } = ensureMasterSheets();
     const data = scoutsSheet.getDataRange().getValues();
     const normalizedEmail = email.trim().toLowerCase();
@@ -193,11 +146,9 @@ function validateScoutEmail(email) {
     for (let i = 1; i < data.length; i++) {
       const sheetEmail = (data[i][1] || '').toString().trim().toLowerCase();
       if (sheetEmail === normalizedEmail) {
-        cache.put(cacheKey, 'true', 86400);
         return true;
       }
     }
-    cache.put(cacheKey, 'false', 86400);
     return false;
   } catch (error) {
     return false;
@@ -206,14 +157,6 @@ function validateScoutEmail(email) {
 
 function getScoutId(email) {
   try {
-    const cache = CacheService.getScriptCache();
-    const cacheKey = `scout_id_${email.trim().toLowerCase()}`;
-    const cachedId = cache.get(cacheKey);
-
-    if (cachedId) {
-      return cachedId;
-    }
-
     const { scoutsSheet } = ensureMasterSheets();
     const data = scoutsSheet.getDataRange().getValues();
     const normalizedEmail = email.trim().toLowerCase();
@@ -221,10 +164,7 @@ function getScoutId(email) {
     for (let i = 1; i < data.length; i++) {
       const sheetEmail = (data[i][1] || '').toString().trim().toLowerCase();
       if (sheetEmail === normalizedEmail) {
-        const scoutId = data[i][0];
-        // Cache the scout ID for 24 hours
-        cache.put(cacheKey, scoutId, 86400);
-        return scoutId;
+        return data[i][0];
       }
     }
     return null;
@@ -235,14 +175,6 @@ function getScoutId(email) {
 
 function getSheetIdByEmail(email) {
   try {
-    const cache = CacheService.getScriptCache();
-    const cacheKey = `sheet_id_${email.trim().toLowerCase()}`;
-    const cachedId = cache.get(cacheKey);
-
-    if (cachedId && cachedId !== 'null') {
-      return cachedId;
-    }
-
     const { scoutsSheet } = ensureMasterSheets();
     const data = scoutsSheet.getDataRange().getValues();
     const normalizedEmail = email.trim().toLowerCase();
@@ -250,14 +182,9 @@ function getSheetIdByEmail(email) {
     for (let i = 1; i < data.length; i++) {
       const sheetEmail = (data[i][1] || '').toString().trim().toLowerCase();
       if (sheetEmail === normalizedEmail) {
-        const sheetId = (data[i][2] || '').toString().trim() || null;
-        // Cache the sheet ID for 24 hours
-        cache.put(cacheKey, sheetId || 'null', 86400);
-        return sheetId;
+        return (data[i][2] || '').toString().trim() || null;
       }
     }
-    // Cache null result too to avoid repeated lookups
-    cache.put(cacheKey, 'null', 86400);
     return null;
   } catch (error) {
     return null;
@@ -270,17 +197,19 @@ function handleCheckCreatorStatus(email, profile_url) {
   }
 
   try {
+    const { masterSheet } = ensureMasterSheets();
     const scoutId = getScoutId(email);
 
     if (!scoutId) {
       return { error: 'Scout not found', status: 'error' };
     }
 
-    // Use targeted row lookup instead of full sheet scan
-    const rowNumber = getCreatorRowNumber(scoutId, profile_url);
+    const data = masterSheet.getDataRange().getValues();
 
-    if (rowNumber) {
-      return { status: 'saved', exists: true };
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] === scoutId && data[i][1] === profile_url) {
+        return { status: 'saved', exists: true };
+      }
     }
 
     return { status: 'new', exists: false };
@@ -302,64 +231,49 @@ function handleGetCreatorStatus(email, profile_url) {
       return { error: 'Scout not found', status: null };
     }
 
-    console.log(`[GAS LOOKUP] scoutId=${scoutId} | profileUrl=${profile_url}`);
+    // CRITICAL: Normalize URL for consistent lookup
+    const normalizedUrl = normalizeProfileUrl(profile_url);
+    console.log(`[GET STATUS] Normalized URL: ${profile_url} → ${normalizedUrl}`);
 
-    // RESTORED: Pure simple logic from original working version
-    // Always read fresh from sheet, no caching to avoid stale data
     const data = masterSheet.getDataRange().getValues();
-
-    // FORENSIC: Find ALL matching rows
-    const allMatchingRows = [];
+    let allMatches = [];
     let foundRow = null;
-    let foundRowNum = null;
 
+    // Find ALL matching rows to detect duplicates
     for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === scoutId && data[i][1] === profile_url) {
-        allMatchingRows.push({
+      const sheetUrl = normalizeProfileUrl(data[i][1]);
+      if (data[i][0] === scoutId && sheetUrl === normalizedUrl) {
+        allMatches.push({
           rowNum: i + 1,
-          scoutId: data[i][0],
-          profileUrl: data[i][1],
           status: data[i][4],
-          price: data[i][7]
+          price: data[i][7],
+          updatedAt: data[i][6]
         });
-        // Keep updating to get the LATEST (last) matching row
-        foundRow = data[i];
-        foundRowNum = i + 1;
+        foundRow = i + 1;  // Keep updating to get LAST match (newest)
       }
     }
 
-    // Log ALL matching rows for forensics
-    if (allMatchingRows.length > 0) {
-      console.log(`[GAS MATCHING ROWS] Found ${allMatchingRows.length} matching row(s)`);
-      for (let match of allMatchingRows) {
-        console.log(`[MATCHING ROW] row=${match.rowNum} | scoutId=${match.scoutId} | url=${match.profileUrl} | status=${match.status} | price=${match.price}`);
-      }
+    if (allMatches.length > 1) {
+      console.log(`[GET STATUS] Found ${allMatches.length} rows for scoutId=${scoutId}, url=${normalizedUrl}`);
+      // Return LAST match (newest based on order in sheet)
+      const lastMatch = allMatches[allMatches.length - 1];
+      console.log(`[GET STATUS] Returning last match: row=${lastMatch.rowNum}, status=${lastMatch.status}`);
     }
 
     if (!foundRow) {
-      console.log(`[GAS RETURN] status=null (not found)`);
+      console.log(`[GET STATUS] No match found for scoutId=${scoutId}, url=${normalizedUrl}`);
       return { status: null, found: false, lock_in_price: null };
     }
 
-    // Log the row we're using
-    console.log(`[GAS ROW FOUND] rowNumber=${foundRowNum}`);
-    console.log(`[GAS ROW DATA] columnA(scoutId)=${foundRow[0]} | columnB(url)=${foundRow[1]} | columnC(platform)=${foundRow[2]} | columnD(username)=${foundRow[3]} | columnE(status)=${foundRow[4]} | columnF(createdAt)=${foundRow[5]} | columnG(updatedAt)=${foundRow[6]} | columnH(price)=${foundRow[7]}`);
+    // Read the LAST matching row
+    const lastRowIndex = foundRow - 1;
+    const creatorStatus = (data[lastRowIndex][4] || 'saved').toString();
+    const lockInPrice = (data[lastRowIndex][7] || null);
 
-    // Return the status from column E (index 4)
-    // CRITICAL: Do NOT default to 'saved' when status column is empty
-    const creatorStatus = (foundRow[4] || '').toString();
-    const lockInPrice = (foundRow[7] || null);
-
-    if (!creatorStatus) {
-      // Empty status = not a valid creator record
-      console.log(`[GAS RETURN] status=null (empty status in row)`);
-      return { status: null, found: false, lock_in_price: null };
-    }
-
-    console.log(`[GAS RETURN] status=${creatorStatus} | price=${lockInPrice}`);
+    console.log(`[GET STATUS] Returning: row=${foundRow}, status=${creatorStatus}, price=${lockInPrice}`);
     return { status: creatorStatus, found: true, lock_in_price: lockInPrice };
   } catch (error) {
-    console.log(`[GAS ERROR] ${error.toString()}`);
+    console.log(`[GET STATUS] Error: ${error.toString()}`);
     return { error: error.toString(), status: null, lock_in_price: null };
   }
 }
@@ -373,27 +287,37 @@ function handleUpdateCreatorStatus(email, profile_url, new_status, personalSheet
       return { error: 'Scout not found', status: 'error' };
     }
 
-    // Use targeted row lookup instead of scanning entire sheet
-    let foundRow = getCreatorRowNumber(scoutId, profile_url);
+    // CRITICAL: Normalize URL for consistent lookup
+    const normalizedUrl = normalizeProfileUrl(profile_url);
+    console.log(`[UPDATE STATUS] Normalized URL: ${profile_url} → ${normalizedUrl}`);
 
-    if (!foundRow) {
-      // Fallback: Force a fresh scan in case index is stale
-      const cache = CacheService.getScriptCache();
-      cache.remove(`creator_index_${scoutId}`);
-      foundRow = getCreatorRowNumber(scoutId, profile_url);
+    const masterData = masterSheet.getDataRange().getValues();
+    let foundRow = null;
+    let allMatches = [];
 
-      if (!foundRow) {
-        return { error: 'Creator not found', status: 'error' };
+    // Find ALL matching rows, return LAST match (newest)
+    for (let i = 1; i < masterData.length; i++) {
+      const sheetUrl = normalizeProfileUrl(masterData[i][1]);
+      if (masterData[i][0] === scoutId && sheetUrl === normalizedUrl) {
+        allMatches.push(i + 1);
+        foundRow = i + 1;  // Keep updating to get LAST match
       }
     }
 
+    if (allMatches.length > 1) {
+      console.log(`[UPDATE STATUS] Found ${allMatches.length} rows for scoutId=${scoutId}, url=${normalizedUrl}: ${allMatches.join(',')}`);
+      console.log(`[UPDATE STATUS] Updating LAST match: row=${foundRow}`);
+    }
+
+    if (!foundRow) {
+      console.log(`[UPDATE STATUS] No match found for scoutId=${scoutId}, url=${normalizedUrl}`);
+      return { error: 'Creator not found', status: 'error' };
+    }
+
+    const oldStatus = masterData[foundRow - 1][4];
     masterSheet.getRange(foundRow, 5).setValue(new_status);
     masterSheet.getRange(foundRow, 7).setValue(new Date().toISOString());
-
-    // CRITICAL: Invalidate status cache for this creator
-    const cache = CacheService.getScriptCache();
-    cache.remove(`creator_${scoutId}_${profile_url}`); // Status cache
-    // Note: Row number caching is DISABLED - fresh lookup always done
+    console.log(`[UPDATE STATUS] Updated row ${foundRow}: ${oldStatus} → ${new_status}`);
 
     // Update personal sheet if provided
     if (personalSheetId) {
@@ -431,19 +355,33 @@ function handleLockInPrice(email, profile_url, price, personalSheetId) {
       return { error: 'Scout not found', status: 'error' };
     }
 
-    // Use targeted row lookup instead of scanning entire sheet
-    const foundRow = getCreatorRowNumber(scoutId, profile_url);
+    // CRITICAL: Normalize URL for consistent lookup
+    const normalizedUrl = normalizeProfileUrl(profile_url);
+    console.log(`[LOCK IN PRICE] Normalized URL: ${profile_url} → ${normalizedUrl}`);
+
+    // Update Master Sheet - Lock-In Price is column 8 (index 7)
+    const masterData = masterSheet.getDataRange().getValues();
+    let foundRow = null;
+    let allMatches = [];
+
+    // Find ALL matching rows, return LAST match (newest)
+    for (let i = 1; i < masterData.length; i++) {
+      const sheetUrl = normalizeProfileUrl(masterData[i][1]);
+      if (masterData[i][0] === scoutId && sheetUrl === normalizedUrl) {
+        allMatches.push(i + 1);
+        foundRow = i + 1;  // Keep updating to get LAST match
+      }
+    }
+
+    if (allMatches.length > 1) {
+      console.log(`[LOCK IN PRICE] Found ${allMatches.length} rows: ${allMatches.join(',')}, updating row=${foundRow}`);
+    }
 
     if (!foundRow) {
       return { error: 'Creator not found in Master Sheet', status: 'error' };
     }
 
     masterSheet.getRange(foundRow, 8).setValue(price);
-
-    // CRITICAL: Invalidate status cache for this creator
-    const cache = CacheService.getScriptCache();
-    cache.remove(`creator_${scoutId}_${profile_url}`); // Status cache
-    // Note: Row number caching is DISABLED - fresh lookup always done
 
     // Update personal sheet if provided - Lock-In Price is column 7 (index 6)
     if (personalSheetId) {
@@ -485,15 +423,24 @@ function handleSaveCreator(email, personalSheetId, data, initialStatus = 'saved'
 
   const { masterSheet } = ensureMasterSheets();
 
-  // Use targeted row lookup for O(1) duplicate check instead of scanning entire sheet
-  const existingRow = getCreatorRowNumber(scoutId, profile_url);
-  if (existingRow) {
-    return { error: 'Creator already scouted', status: 'saved' };
+  // CRITICAL: Normalize URL for consistent duplicate check
+  const normalizedUrl = normalizeProfileUrl(profile_url);
+  console.log(`[SAVE CREATOR] Normalized URL: ${profile_url} → ${normalizedUrl}`);
+
+  // Check if creator already exists in Master Sheet for this scout
+  const masterData = masterSheet.getDataRange().getValues();
+  for (let i = 1; i < masterData.length; i++) {
+    const sheetUrl = normalizeProfileUrl(masterData[i][1]);
+    if (masterData[i][0] === scoutId && sheetUrl === normalizedUrl) {
+      console.log(`[SAVE CREATOR] Creator already exists at row ${i + 1}`);
+      return { error: 'Creator already scouted', status: 'saved' };
+    }
   }
 
   const now = new Date().toISOString();
 
   // Save to Master Sheet with initial status and empty price column
+  console.log(`[SAVE CREATOR] Saving new creator: status=${initialStatus}`);
   masterSheet.appendRow([
     scoutId,
     profile_url,
@@ -539,11 +486,6 @@ function handleSaveCreator(email, personalSheetId, data, initialStatus = 'saved'
     // If personal sheet fails, still succeed but log
     Logger.log('Warning: Could not save to personal sheet: ' + error.toString());
   }
-
-  // Invalidate caches for new creator
-  const cache = CacheService.getScriptCache();
-  cache.remove(`creator_${scoutId}_${profile_url}`);
-  invalidateCreatorIndex(scoutId);
 
   return { status: 'success', success: true };
 }
