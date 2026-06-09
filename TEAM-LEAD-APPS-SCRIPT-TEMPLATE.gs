@@ -162,6 +162,14 @@ function doGet(e) {
 
 function validateScoutEmail(email) {
   try {
+    const cache = CacheService.getScriptCache();
+    const cacheKey = `scout_valid_${email.trim().toLowerCase()}`;
+    const cachedResult = cache.get(cacheKey);
+
+    if (cachedResult !== null) {
+      return cachedResult === 'true';
+    }
+
     const { scoutsSheet } = ensureMasterSheets();
     const data = scoutsSheet.getDataRange().getValues();
     const normalizedEmail = email.trim().toLowerCase();
@@ -169,9 +177,11 @@ function validateScoutEmail(email) {
     for (let i = 1; i < data.length; i++) {
       const sheetEmail = (data[i][1] || '').toString().trim().toLowerCase();
       if (sheetEmail === normalizedEmail) {
+        cache.put(cacheKey, 'true', 86400);
         return true;
       }
     }
+    cache.put(cacheKey, 'false', 86400);
     return false;
   } catch (error) {
     return false;
@@ -209,6 +219,14 @@ function getScoutId(email) {
 
 function getSheetIdByEmail(email) {
   try {
+    const cache = CacheService.getScriptCache();
+    const cacheKey = `sheet_id_${email.trim().toLowerCase()}`;
+    const cachedId = cache.get(cacheKey);
+
+    if (cachedId && cachedId !== 'null') {
+      return cachedId;
+    }
+
     const { scoutsSheet } = ensureMasterSheets();
     const data = scoutsSheet.getDataRange().getValues();
     const normalizedEmail = email.trim().toLowerCase();
@@ -216,9 +234,14 @@ function getSheetIdByEmail(email) {
     for (let i = 1; i < data.length; i++) {
       const sheetEmail = (data[i][1] || '').toString().trim().toLowerCase();
       if (sheetEmail === normalizedEmail) {
-        return (data[i][2] || '').toString().trim() || null;
+        const sheetId = (data[i][2] || '').toString().trim() || null;
+        // Cache the sheet ID for 24 hours
+        cache.put(cacheKey, sheetId || 'null', 86400);
+        return sheetId;
       }
     }
+    // Cache null result too to avoid repeated lookups
+    cache.put(cacheKey, 'null', 86400);
     return null;
   } catch (error) {
     return null;
