@@ -264,19 +264,17 @@ function handleCheckCreatorStatus(email, profile_url) {
   }
 
   try {
-    const { masterSheet } = ensureMasterSheets();
     const scoutId = getScoutId(email);
 
     if (!scoutId) {
       return { error: 'Scout not found', status: 'error' };
     }
 
-    const data = masterSheet.getDataRange().getValues();
+    // Use targeted row lookup instead of full sheet scan
+    const rowNumber = getCreatorRowNumber(scoutId, profile_url);
 
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === scoutId && data[i][1] === profile_url) {
-        return { status: 'saved', exists: true };
-      }
+    if (rowNumber) {
+      return { status: 'saved', exists: true };
     }
 
     return { status: 'new', exists: false };
