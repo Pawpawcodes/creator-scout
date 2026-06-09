@@ -1116,6 +1116,9 @@ async function handleSaveCreator(status = 'saved') {
     const isNewCreator = currentStatus === 'new';
     const action = isNewCreator ? 'saveCreator' : 'updateCreatorStatus';
 
+    // DEBUG: Log action being called
+    console.log('[Creator Scout] Calling action:', action, 'Status:', status, 'currentStatus:', currentStatus);
+
     // CRITICAL: Capture previous status BEFORE we update it
     // Needed for reverting UI if GAS sync fails
     const previousStatus = currentStatus;
@@ -1230,12 +1233,18 @@ async function handleSaveCreator(status = 'saved') {
             // CRITICAL: Check if creator exists (found flag)
             if (verifyResult && verifyResult.found === false) {
               // Creator not found in sheet - save probably failed silently
-              console.error('Verification failed: creator not found after save');
+              console.error('Verification failed:', {
+                scoutEmail: cachedSettings.SCOUT_EMAIL,
+                profileUrl: currentCreatorData?.profile_url,
+                verifyResult: verifyResult,
+                error: verifyResult.error
+              });
               // Revert optimistic state since creator doesn't actually exist
               currentStatus = previousStatus;
               window.__scoutWidgetStatus = previousStatus;
               updateButtonStatus(previousStatus);
-              showSaveMessage('Error: Creator could not be saved to sheet', 'error');
+              const errorMsg = verifyResult.error ? `Error: ${verifyResult.error}` : 'Error: Creator could not be saved to sheet';
+              showSaveMessage(errorMsg, 'error');
               return;
             }
 
