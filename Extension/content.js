@@ -1212,6 +1212,59 @@ async function handleSaveCreator(status = 'saved') {
         if (!(result.success || result.status === 'success')) {
           throw new Error(result.error || 'Save failed');
         }
+
+        // CRITICAL FIX: Verify status with GAS to ensure cache is correct
+        // This prevents cache inconsistencies from race conditions or failed optimistic updates
+        const verifyUrl = new URL(cachedSettings.GAS_URL);
+        verifyUrl.searchParams.append('action', 'getCreatorStatus');
+        verifyUrl.searchParams.append('email', cachedSettings.SCOUT_EMAIL);
+        verifyUrl.searchParams.append('profile_url', currentCreatorData.profile_url);
+
+        const verifyController = new AbortController();
+        const verifyTimeout = setTimeout(() => verifyController.abort(), 5000);
+
+        fetch(verifyUrl.toString(), { signal: verifyController.signal })
+          .then(verifyResponse => verifyResponse.json())
+          .then(verifyResult => {
+            clearTimeout(verifyTimeout);
+            // Update cache with verified GAS status (source of truth)
+            if (verifyResult && verifyResult.status) {
+              chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (res) => {
+                const cachedStatus = res.CREATOR_STATUS_CACHE || {};
+                const cachedPrices = res.CREATOR_LOCK_IN_PRICE_CACHE || {};
+                const profileUrl = currentCreatorData.profile_url;
+
+                // Update cache with verified status from GAS
+                cachedStatus[profileUrl] = {
+                  status: verifyResult.status,
+                  found: true
+                };
+
+                // Update lock-in price if it exists
+                if (verifyResult.lock_in_price) {
+                  cachedPrices[profileUrl] = verifyResult.lock_in_price;
+                } else {
+                  delete cachedPrices[profileUrl];
+                }
+
+                chrome.storage.local.set({
+                  CREATOR_STATUS_CACHE: cachedStatus,
+                  CREATOR_LOCK_IN_PRICE_CACHE: cachedPrices
+                });
+
+                // Update UI if status differs from optimistic update
+                if (verifyResult.status !== status) {
+                  window.__scoutWidgetStatus = verifyResult.status;
+                  currentStatus = verifyResult.status;
+                  updateButtonStatus(verifyResult.status);
+                }
+              });
+            }
+          })
+          .catch(() => {
+            clearTimeout(verifyTimeout);
+            // Verification timeout or failed - cache already updated optimistically
+          });
       })
       .catch(error => {
         // GAS failed - revert UI and cache to previous state
