@@ -1665,6 +1665,7 @@ function checkAndShowWidget() {
 
   // INSTANT: Mount empty widget shell immediately (~0ms)
   window.__scoutWidgetStatus = 'new';
+  currentStatus = 'new'; // CRITICAL: Initialize currentStatus for new creators
   window.__scoutWidgetPrice = null;
   createFloatingButton();
   widgetInstance = getExistingWidget();
