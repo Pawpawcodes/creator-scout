@@ -1130,82 +1130,109 @@ async function handleSaveCreator(status = 'saved') {
       url.searchParams.append('new_status', status);
     }
 
-    const response = await fetch(url.toString());
-    const result = await response.json();
+    // TAT OPTIMIZATION: Update UI immediately (optimistic), sync with GAS in background
+    // User sees instant feedback, GAS verification happens asynchronously
+    updateButtonStatus(status);
 
-    if (result.success || result.status === 'success') {
-      updateButtonStatus(status);
-
-      // Update popup color class to match new status
-      const popup = document.getElementById('scout-widget-popup');
-      if (popup) {
-        popup.classList.remove('popup-saved', 'popup-hold', 'popup-locked-in');
-        if (status === 'saved') popup.classList.add('popup-saved');
-        else if (status === 'hold') popup.classList.add('popup-hold');
-        else if (status === 'locked_in') popup.classList.add('popup-locked-in');
-      }
-
-      // Update badge color class to match new status
-      const badge = document.querySelector('.creator-scout-widget .scout-badge');
-      if (badge) {
-        badge.classList.remove('badge-saved', 'badge-hold', 'badge-locked-in', 'badge-new', 'badge-error');
-        if (status === 'saved') badge.classList.add('badge-saved');
-        else if (status === 'hold') badge.classList.add('badge-hold');
-        else if (status === 'locked_in') badge.classList.add('badge-locked-in');
-      }
-
-      // Progressive state transitions: disable previous states, enable future ones
-      const statusOrder = ['saved', 'hold', 'locked_in'];
-      const currentIndex = statusOrder.indexOf(status);
-
-      statusButtons.forEach(btn => {
-        const btnStatus = btn.getAttribute('data-status');
-        const btnIndex = statusOrder.indexOf(btnStatus);
-
-        if (btnStatus === status) {
-          // Current button: mark active and disable
-          btn.classList.add('active');
-          btn.disabled = true;
-        } else if (btnIndex < currentIndex) {
-          // Previous states: disable and remove active
-          btn.classList.remove('active');
-          btn.disabled = true;
-        } else {
-          // Future states: enable and remove active
-          btn.classList.remove('active');
-          btn.disabled = false;
-        }
-        btn.textContent = getButtonLabel(btnStatus);
-      });
-
-      // CRITICAL FIX: Sync local runtime state after successful Save
-      // This ensures Hold/Lock work immediately without requiring page refresh
-      currentStatus = status;
-      if (currentCreatorData) {
-        currentCreatorData.status = status;
-      }
-
-      // CRITICAL FIX 3: Persist status to cache immediately after successful update
-      // Ensures status survives page refresh, page close, and opening in another tab
-      if (currentCreatorData && currentCreatorData.profile_url) {
-        chrome.storage.local.get(['CREATOR_STATUS_CACHE'], (result) => {
-          const cachedStatus = result.CREATOR_STATUS_CACHE || {};
-          cachedStatus[currentCreatorData.profile_url] = status;
-          chrome.storage.local.set({ CREATOR_STATUS_CACHE: cachedStatus });
-          console.log('[Creator Scout] Cached status for', currentCreatorData.profile_url, ':', status);
-        });
-      }
-
-      showSaveMessage(`Creator ${getStatusMessage(status)}!`, 'success');
-
-      // KEEP WIDGET OPEN: Widget stays open after Save/Hold/Lock
-      // Only close when user manually clicks X button
-      if (status === 'locked_in') {
-        showLockInPriceSection();
-      }
-    } else {
-      throw new Error(result.error || 'Save failed');
+    // Update popup color class to match new status
+    const popup = document.getElementById('scout-widget-popup');
+    if (popup) {
+      popup.classList.remove('popup-saved', 'popup-hold', 'popup-locked-in');
+      if (status === 'saved') popup.classList.add('popup-saved');
+      else if (status === 'hold') popup.classList.add('popup-hold');
+      else if (status === 'locked_in') popup.classList.add('popup-locked-in');
     }
+
+    // Update badge color class to match new status
+    const badge = document.querySelector('.creator-scout-widget .scout-badge');
+    if (badge) {
+      badge.classList.remove('badge-saved', 'badge-hold', 'badge-locked-in', 'badge-new', 'badge-error');
+      if (status === 'saved') badge.classList.add('badge-saved');
+      else if (status === 'hold') badge.classList.add('badge-hold');
+      else if (status === 'locked_in') badge.classList.add('badge-locked-in');
+    }
+
+    // Progressive state transitions: disable previous states, enable future ones
+    const statusOrder = ['saved', 'hold', 'locked_in'];
+    const currentIndex = statusOrder.indexOf(status);
+
+    statusButtons.forEach(btn => {
+      const btnStatus = btn.getAttribute('data-status');
+      const btnIndex = statusOrder.indexOf(btnStatus);
+
+      if (btnStatus === status) {
+        // Current button: mark active and disable
+        btn.classList.add('active');
+        btn.disabled = true;
+      } else if (btnIndex < currentIndex) {
+        // Previous states: disable and remove active
+        btn.classList.remove('active');
+        btn.disabled = true;
+      } else {
+        // Future states: enable and remove active
+        btn.classList.remove('active');
+        btn.disabled = false;
+      }
+      btn.textContent = getButtonLabel(btnStatus);
+    });
+
+    // Sync local runtime state immediately
+    currentStatus = status;
+    if (currentCreatorData) {
+      currentCreatorData.status = status;
+    }
+
+    // Persist to cache immediately
+    if (currentCreatorData && currentCreatorData.profile_url) {
+      chrome.storage.local.get(['CREATOR_STATUS_CACHE'], (result) => {
+        const cachedStatus = result.CREATOR_STATUS_CACHE || {};
+        cachedStatus[currentCreatorData.profile_url] = status;
+        chrome.storage.local.set({ CREATOR_STATUS_CACHE: cachedStatus });
+      });
+    }
+
+    showSaveMessage(`Creator ${getStatusMessage(status)}!`, 'success');
+
+    // Show lock-in price section immediately if locked
+    if (status === 'locked_in') {
+      showLockInPriceSection();
+    }
+
+    // TAT OPTIMIZATION: Fire GAS sync in background, don't wait for response
+    // Verify result asynchronously, show error only if sync fails
+    fetch(url.toString())
+      .then(response => response.json())
+      .then(result => {
+        if (!result.success && result.status !== 'success') {
+          throw new Error(result.error || 'Save failed');
+        }
+        console.log(`[Creator Scout] ${actionType} confirmed by GAS`);
+      })
+      .catch(error => {
+        console.error(`Error ${actionType} creator:`, error);
+        showSaveMessage(`Error ${actionType} status: ${error.message}`, 'error');
+
+        // Revert optimistic update on GAS error
+        const lastStatus = currentStatus || 'new';
+        statusButtons.forEach(btn => {
+          const btnStatus = btn.getAttribute('data-status');
+          const statusOrder = ['saved', 'hold', 'locked_in'];
+          const lastIndex = statusOrder.indexOf(lastStatus);
+          const btnIndex = statusOrder.indexOf(btnStatus);
+
+          btn.textContent = getButtonLabel(btnStatus);
+          if (btnStatus === lastStatus) {
+            btn.classList.add('active');
+            btn.disabled = true;
+          } else if (btnIndex < lastIndex) {
+            btn.classList.remove('active');
+            btn.disabled = true;
+          } else {
+            btn.classList.remove('active');
+            btn.disabled = false;
+          }
+        });
+      });
   } catch (error) {
     const actionType = currentStatus === 'new' ? 'saving' : 'updating';
     console.error(`Error ${actionType} creator:`, error);
