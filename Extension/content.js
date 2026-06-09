@@ -1116,6 +1116,10 @@ async function handleSaveCreator(status = 'saved') {
     const isNewCreator = currentStatus === 'new';
     const action = isNewCreator ? 'saveCreator' : 'updateCreatorStatus';
 
+    // CRITICAL: Capture previous status BEFORE we update it
+    // Needed for reverting UI if GAS sync fails
+    const previousStatus = currentStatus;
+
     url.searchParams.append('action', action);
     url.searchParams.append('email', stored.SCOUT_EMAIL);
     url.searchParams.append('personal_sheet_id', stored.PERSONAL_SHEET_ID);
@@ -1212,32 +1216,32 @@ async function handleSaveCreator(status = 'saved') {
         // GAS failed - revert UI and cache to previous state
         console.error(`Error saving creator:`, error);
 
-        // Revert button state to previous status
-        const lastStatus = currentStatus || 'new';
-        updateButtonStatus(lastStatus);
+        // Revert button state to previous status (before this change)
+        updateButtonStatus(previousStatus);
 
         // Revert popup and badge colors
         const popup = document.getElementById('scout-widget-popup');
         if (popup) {
           popup.classList.remove('popup-saved', 'popup-hold', 'popup-locked-in');
-          if (lastStatus === 'saved') popup.classList.add('popup-saved');
-          else if (lastStatus === 'hold') popup.classList.add('popup-hold');
-          else if (lastStatus === 'locked_in') popup.classList.add('popup-locked-in');
+          if (previousStatus === 'saved') popup.classList.add('popup-saved');
+          else if (previousStatus === 'hold') popup.classList.add('popup-hold');
+          else if (previousStatus === 'locked_in') popup.classList.add('popup-locked-in');
         }
 
         const badge = document.querySelector('.creator-scout-widget .scout-badge');
         if (badge) {
           badge.classList.remove('badge-saved', 'badge-hold', 'badge-locked-in', 'badge-new', 'badge-error');
-          if (lastStatus === 'saved') badge.classList.add('badge-saved');
-          else if (lastStatus === 'hold') badge.classList.add('badge-hold');
-          else if (lastStatus === 'locked_in') badge.classList.add('badge-locked-in');
+          if (previousStatus === 'saved') badge.classList.add('badge-saved');
+          else if (previousStatus === 'hold') badge.classList.add('badge-hold');
+          else if (previousStatus === 'locked_in') badge.classList.add('badge-locked-in');
         }
 
         // Revert cache
+        currentStatus = previousStatus;
         if (currentCreatorData && currentCreatorData.profile_url) {
           chrome.storage.local.get(['CREATOR_STATUS_CACHE'], (result) => {
             const cachedStatus = result.CREATOR_STATUS_CACHE || {};
-            cachedStatus[currentCreatorData.profile_url] = lastStatus;
+            cachedStatus[currentCreatorData.profile_url] = previousStatus;
             chrome.storage.local.set({ CREATOR_STATUS_CACHE: cachedStatus });
           });
         }
