@@ -485,6 +485,12 @@ function handleSaveCreator(email, personalSheetId, data, initialStatus = 'saved'
     '' // Lock-In Price (empty initially)
   ]);
 
+  // CRITICAL: Invalidate status cache immediately so next fetch gets fresh data
+  const cache = CacheService.getScriptCache();
+  cache.remove(`creator_${scoutId}_${profile_url}`);
+  // Also invalidate row number cache in case profile_url lookup cached as "not found"
+  cache.remove(`creator_row_${scoutId}_${profile_url}`);
+
   // Save to personal sheet
   try {
     const personalSheet = SpreadsheetApp.openById(personalSheetId);
