@@ -1765,14 +1765,19 @@ function checkAndShowWidget() {
         removeLoadingStatus();
 
         // CRITICAL FIX: Handle deleted creators
-        // If creator is not found in sheets, clear stale cache
+        // If creator is not found in sheets, IMMEDIATELY clear ALL stale caches
+        // Do this SYNCHRONOUSLY before showing any status to prevent displaying deleted data
         if (result && result.found === false) {
-          // Creator was deleted - clear all cached data
-          console.log('[Creator Scout] Creator deleted - clearing stale cache:', {
+          // Creator was deleted - clear all cached data IMMEDIATELY
+          console.log('[Creator Scout] Creator deleted - clearing ALL stale caches:', {
             profileUrl: profileKey,
             gasResult: result
           });
 
+          // 1. Clear localStorage immediately (synchronous)
+          localStorage.removeItem(`scout_status_${profileKey}`);
+
+          // 2. Clear chrome.storage immediately (synchronous from extension perspective)
           chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (cacheRes) => {
             const cachedStatus = cacheRes.CREATOR_STATUS_CACHE || {};
             const cachedPrices = cacheRes.CREATOR_LOCK_IN_PRICE_CACHE || {};
@@ -1781,65 +1786,82 @@ function checkAndShowWidget() {
             delete cachedStatus[profileKey];
             delete cachedPrices[profileKey];
 
+            // Apply changes immediately
             chrome.storage.local.set({
               CREATOR_STATUS_CACHE: cachedStatus,
               CREATOR_LOCK_IN_PRICE_CACHE: cachedPrices
             });
+
+            console.log('[Creator Scout] Cache cleared for deleted creator:', {
+              profileUrl: profileKey,
+              remainingStatuses: Object.keys(cachedStatus).length,
+              remainingPrices: Object.keys(cachedPrices).length
+            });
           });
 
-          // Clear localStorage persistent status
-          localStorage.removeItem(`scout_status_${profileKey}`);
-
-          // Show as new (creator doesn't exist in sheets)
+          // 3. Update UI to show 'new' (creator does not exist)
           window.__scoutWidgetStatus = 'new';
           currentStatus = 'new';
           window.__scoutWidgetPrice = null;
+
+          // 4. Remove loading state and show 'new' status
+          removeLoadingStatus();
           updateButtonStatus('new');
+
+          console.log('[Creator Scout] Deleted creator now shows as new:', profileKey);
           return;
         }
 
         // Get actual status from GAS (source of truth)
-        let newStatus = 'new';
-        if (result && result.status) {
-          newStatus = result.status;
-        }
+        // Use ONLY the GAS response, never fall back to cache
+        let newStatus = result?.status || 'new';
+        const lockInPrice = result?.lock_in_price || null;
 
-        console.log('[Creator Scout] Status lookup from GAS:', {
+        console.log('[Creator Scout] Status CONFIRMED from GAS (source of truth):', {
           profileUrl: profileKey,
           status: newStatus,
-          lockInPrice: result?.lock_in_price,
+          lockInPrice: lockInPrice,
           found: result?.found
         });
 
-        // Update UI with confirmed status (no intermediate states)
+        // Update UI with confirmed status (no intermediate states, no cache)
         window.__scoutWidgetStatus = newStatus;
         currentStatus = newStatus;
+        window.__scoutWidgetPrice = lockInPrice;
+
+        // Remove loading and show actual status
+        removeLoadingStatus();
         updateButtonStatus(window.__scoutWidgetStatus);
 
-        // Update cache and localStorage with confirmed status from GAS (source of truth)
+        // Update cache and localStorage with CONFIRMED status from GAS
+        // This is for future loads, but UI is already updated from GAS
         chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (res) => {
           const cachedStatus = res.CREATOR_STATUS_CACHE || {};
           const cachedPrices = res.CREATOR_LOCK_IN_PRICE_CACHE || {};
 
-          // Update cache with confirmed status
+          // Update cache with confirmed status from GAS (source of truth)
           cachedStatus[profileKey] = { status: newStatus, found: true };
 
-          // Update lock-in price from GAS
-          if (result && result.lock_in_price) {
-            cachedPrices[profileKey] = result.lock_in_price;
-            window.__scoutWidgetPrice = result.lock_in_price;
+          // Update or clear lock-in price based on GAS response
+          if (lockInPrice) {
+            cachedPrices[profileKey] = lockInPrice;
           } else {
             delete cachedPrices[profileKey];
-            window.__scoutWidgetPrice = null;
           }
 
           chrome.storage.local.set({
             CREATOR_STATUS_CACHE: cachedStatus,
             CREATOR_LOCK_IN_PRICE_CACHE: cachedPrices
           });
+
+          console.log('[Creator Scout] Cache updated with GAS response:', {
+            profileUrl: profileKey,
+            status: newStatus,
+            price: lockInPrice
+          });
         });
 
-        // Update localStorage with confirmed status for persistence
+        // Update localStorage with confirmed status for persistence across pages
         localStorage.setItem(`scout_status_${profileKey}`, newStatus);
       })
       .catch(error => {
@@ -1898,30 +1920,33 @@ function checkAndShowWidget() {
           }
 
           if (result && result.status) {
-            console.log('[Creator Scout] Fallback status lookup:', {
-              profileUrl: syncData.profile_url,
-              status: result.status,
-              lockInPrice: result.lock_in_price
+            const fallbackProfileKey = syncData.profile_url;
+            const fallbackStatus = result.status;
+            const fallbackPrice = result.lock_in_price || null;
+
+            console.log('[Creator Scout] Fallback status CONFIRMED from GAS:', {
+              profileUrl: fallbackProfileKey,
+              status: fallbackStatus,
+              lockInPrice: fallbackPrice
             });
 
-            window.__scoutWidgetStatus = result.status;
-            currentStatus = result.status;
-            updateButtonStatus(result.status);
+            // Update UI immediately with confirmed status
+            window.__scoutWidgetStatus = fallbackStatus;
+            currentStatus = fallbackStatus;
+            window.__scoutWidgetPrice = fallbackPrice;
+            updateButtonStatus(fallbackStatus);
 
-            // Update cache with confirmed status
+            // Update cache with confirmed status from GAS
             chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (res) => {
               const cachedStatus = res.CREATOR_STATUS_CACHE || {};
               const cachedPrices = res.CREATOR_LOCK_IN_PRICE_CACHE || {};
-              const fallbackProfileKey = syncData.profile_url;
 
-              cachedStatus[fallbackProfileKey] = { status: result.status, found: true };
+              cachedStatus[fallbackProfileKey] = { status: fallbackStatus, found: true };
 
-              if (result.lock_in_price) {
-                cachedPrices[fallbackProfileKey] = result.lock_in_price;
-                window.__scoutWidgetPrice = result.lock_in_price;
+              if (fallbackPrice) {
+                cachedPrices[fallbackProfileKey] = fallbackPrice;
               } else {
                 delete cachedPrices[fallbackProfileKey];
-                window.__scoutWidgetPrice = null;
               }
 
               chrome.storage.local.set({
@@ -1930,7 +1955,7 @@ function checkAndShowWidget() {
               });
             });
 
-            localStorage.setItem(`scout_status_${syncData.profile_url}`, result.status);
+            localStorage.setItem(`scout_status_${fallbackProfileKey}`, fallbackStatus);
           }
         })
         .catch(e => {
