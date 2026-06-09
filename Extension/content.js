@@ -1113,6 +1113,10 @@ async function handleSaveCreator(status = 'saved') {
     }
 
     const url = new URL(stored.GAS_URL);
+    // CRITICAL FIX: Ensure currentStatus is properly set
+    if (!currentStatus || currentStatus === 'loading') {
+      currentStatus = 'new';
+    }
     const isNewCreator = currentStatus === 'new';
     const action = isNewCreator ? 'saveCreator' : 'updateCreatorStatus';
 
