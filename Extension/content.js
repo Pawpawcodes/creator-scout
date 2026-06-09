@@ -1227,6 +1227,18 @@ async function handleSaveCreator(status = 'saved') {
           .then(verifyResponse => verifyResponse.json())
           .then(verifyResult => {
             clearTimeout(verifyTimeout);
+            // CRITICAL: Check if creator exists (found flag)
+            if (verifyResult && verifyResult.found === false) {
+              // Creator not found in sheet - save probably failed silently
+              console.error('Verification failed: creator not found after save');
+              // Revert optimistic state since creator doesn't actually exist
+              currentStatus = previousStatus;
+              window.__scoutWidgetStatus = previousStatus;
+              updateButtonStatus(previousStatus);
+              showSaveMessage('Error: Creator could not be saved to sheet', 'error');
+              return;
+            }
+
             // Update cache with verified GAS status (source of truth)
             if (verifyResult && verifyResult.status) {
               chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_LOCK_IN_PRICE_CACHE'], (res) => {
@@ -1664,8 +1676,9 @@ function checkAndShowWidget() {
   }
 
   // INSTANT: Mount empty widget shell immediately (~0ms)
-  window.__scoutWidgetStatus = 'new';
-  currentStatus = 'new'; // CRITICAL: Initialize currentStatus for new creators
+  // Show 'loading' status initially so user sees purple loading state, not blue
+  window.__scoutWidgetStatus = 'loading';
+  currentStatus = 'new'; // Track actual status internally (new until we get response from GAS)
   window.__scoutWidgetPrice = null;
   createFloatingButton();
   widgetInstance = getExistingWidget();
