@@ -21,7 +21,8 @@ function ensureMasterSheets() {
       'Username',
       'Status',
       'Created At',
-      'Updated At'
+      'Updated At',
+      'Lock-In Price'
     ]);
   }
 
@@ -97,6 +98,19 @@ function doGet(e) {
       }
 
       const result = handleUpdateCreatorStatus(email, profile_url, new_status, personalSheetId);
+      return sendJSON(result);
+    }
+
+    if (action === 'lockInPrice') {
+      const profile_url = e.parameter.profile_url;
+      const price = e.parameter.price;
+      const personalSheetId = e.parameter.personal_sheet_id;
+
+      if (!profile_url || !price) {
+        return sendJSON({ error: 'Missing profile_url or price' });
+      }
+
+      const result = handleLockInPrice(email, profile_url, price, personalSheetId);
       return sendJSON(result);
     }
 
@@ -211,13 +225,14 @@ function handleGetCreatorStatus(email, profile_url) {
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === scoutId && data[i][1] === profile_url) {
         const creatorStatus = (data[i][4] || 'saved').toString();
-        return { status: creatorStatus, found: true };
+        const lockInPrice = (data[i][7] || null); // Column 8 (index 7)
+        return { status: creatorStatus, found: true, lock_in_price: lockInPrice };
       }
     }
 
-    return { status: null, found: false };
+    return { status: null, found: false, lock_in_price: null };
   } catch (error) {
-    return { error: error.toString(), status: null };
+    return { error: error.toString(), status: null, lock_in_price: null };
   }
 }
 
@@ -274,6 +289,58 @@ function handleUpdateCreatorStatus(email, profile_url, new_status, personalSheet
   }
 }
 
+function handleLockInPrice(email, profile_url, price, personalSheetId) {
+  try {
+    const { masterSheet } = ensureMasterSheets();
+    const scoutId = getScoutId(email);
+
+    if (!scoutId) {
+      return { error: 'Scout not found', status: 'error' };
+    }
+
+    // Update Master Sheet - Lock-In Price is column 8 (index 7)
+    const masterData = masterSheet.getDataRange().getValues();
+    let foundRow = null;
+
+    for (let i = 1; i < masterData.length; i++) {
+      if (masterData[i][0] === scoutId && masterData[i][1] === profile_url) {
+        foundRow = i + 1;
+        break;
+      }
+    }
+
+    if (!foundRow) {
+      return { error: 'Creator not found in Master Sheet', status: 'error' };
+    }
+
+    masterSheet.getRange(foundRow, 8).setValue(price);
+
+    // Update personal sheet if provided - Lock-In Price is column 7 (index 6)
+    if (personalSheetId) {
+      try {
+        const personalSheet = SpreadsheetApp.openById(personalSheetId);
+        const personalMasterSheet = personalSheet.getSheetByName('Master');
+
+        if (personalMasterSheet) {
+          const personalData = personalMasterSheet.getDataRange().getValues();
+          for (let i = 1; i < personalData.length; i++) {
+            if (personalData[i][0] === profile_url) {
+              personalMasterSheet.getRange(i + 1, 7).setValue(price);
+              break;
+            }
+          }
+        }
+      } catch (error) {
+        Logger.log('Warning: Could not update personal sheet price: ' + error.toString());
+      }
+    }
+
+    return { status: 'success', success: true, price: price };
+  } catch (error) {
+    return { error: error.toString(), status: 'error' };
+  }
+}
+
 function handleSaveCreator(email, personalSheetId, data, initialStatus = 'saved') {
   const { profile_url, platform, username } = data;
 
@@ -298,7 +365,7 @@ function handleSaveCreator(email, personalSheetId, data, initialStatus = 'saved'
 
   const now = new Date().toISOString();
 
-  // Save to Master Sheet with initial status
+  // Save to Master Sheet with initial status and empty price column
   masterSheet.appendRow([
     scoutId,
     profile_url,
@@ -306,7 +373,8 @@ function handleSaveCreator(email, personalSheetId, data, initialStatus = 'saved'
     username,
     initialStatus,
     now,
-    now
+    now,
+    '' // Lock-In Price (empty initially)
   ]);
 
   // Save to personal sheet
@@ -324,7 +392,8 @@ function handleSaveCreator(email, personalSheetId, data, initialStatus = 'saved'
           'Username',
           'Status',
           'Created At',
-          'Updated At'
+          'Updated At',
+          'Lock-In Price'
         ]);
       }
 
@@ -334,7 +403,8 @@ function handleSaveCreator(email, personalSheetId, data, initialStatus = 'saved'
         username,
         initialStatus,
         now,
-        now
+        now,
+        '' // Lock-In Price (empty initially)
       ]);
     }
   } catch (error) {
@@ -408,7 +478,8 @@ function createPersonalSheetForScout(email, scoutName) {
       'Username',
       'Status',
       'Created At',
-      'Updated At'
+      'Updated At',
+      'Lock-In Price'
     ]);
 
     // Format header row
@@ -424,6 +495,7 @@ function createPersonalSheetForScout(email, scoutName) {
     sheet.setColumnWidth(4, 100); // Status
     sheet.setColumnWidth(5, 180); // Created At
     sheet.setColumnWidth(6, 180); // Updated At
+    sheet.setColumnWidth(7, 150); // Lock-In Price
 
     // Freeze header row
     sheet.setFrozenRows(1);

@@ -1,279 +1,224 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Creator Scout</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      width: 360px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: white;
-      color: #111827;
-    }
-
-    .popup-container {
-      padding: 20px;
-    }
-
-    .header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 20px;
-    }
-
-    .header h1 {
-      font-size: 16px;
-      font-weight: 700;
-      color: #111827;
-    }
-
-    .logo {
-      width: 24px;
-      height: 24px;
-      background: #6366f1;
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-size: 12px;
-      font-weight: 700;
-    }
-
-    .section {
-      margin-bottom: 20px;
-    }
-
-    .section-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: #6b7280;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 10px;
-    }
-
-    .stats {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 10px;
-    }
-
-    .stat-box {
-      background: #f3f4f6;
-      border-radius: 8px;
-      padding: 12px;
-      text-align: center;
-    }
-
-    .stat-number {
-      font-size: 18px;
-      font-weight: 700;
-      color: #111827;
-    }
-
-    .stat-label {
-      font-size: 11px;
-      color: #6b7280;
-      margin-top: 4px;
-    }
-
-    .info-box {
-      background: #eff6ff;
-      border: 1px solid #bfdbfe;
-      border-radius: 8px;
-      padding: 12px;
-      margin-bottom: 12px;
-    }
-
-    .info-box p {
-      font-size: 13px;
-      color: #1e40af;
-      line-height: 1.4;
-    }
-
-    .actions {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .btn {
-      padding: 10px;
-      border: none;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .btn-primary {
-      background: #6366f1;
-      color: white;
-    }
-
-    .btn-primary:hover {
-      background: #4f46e5;
-    }
-
-    .btn-secondary {
-      background: #e5e7eb;
-      color: #374151;
-    }
-
-    .btn-secondary:hover {
-      background: #d1d5db;
-    }
-
-    .footer {
-      margin-top: 20px;
-      padding-top: 16px;
-      border-top: 1px solid #e5e7eb;
-      font-size: 11px;
-      color: #6b7280;
-      text-align: center;
-    }
-
-    .user-id {
-      padding: 8px 12px;
-      background: #f9fafb;
-      border-radius: 6px;
-      font-family: monospace;
-      font-size: 11px;
-      color: #6b7280;
-      word-break: break-all;
-      margin-top: 8px;
-    }
-  </style>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="popup-container">
-    <!-- Setup Section -->
-    <div id="setup-section" style="display: none;">
-      <div class="header">
-        <div class="logo">CS</div>
-        <h1>Creator Scout</h1>
-      </div>
-      <div class="section">
-        <div class="section-title">Welcome!</div>
-        <div class="info-box" style="background: #fef3c7; border: 1px solid #fde68a; margin-bottom: 16px;">
-          <p style="color: #92400e;">Before you can sign in, you need to configure your API URL. This is the Google Apps Script URL from your team lead.</p>
+  <div class="container">
+    <!-- Onboarding Screen -->
+    <div id="onboardingView" class="onboarding-view">
+      <div class="onboarding-glass">
+        <div class="onboarding-header">
+          <h1 class="onboarding-logo">🔍</h1>
+          <h2 class="onboarding-title">Creator Scout</h2>
+          <p class="onboarding-subtitle">Set up in 30 seconds</p>
         </div>
-        <button class="btn btn-primary" id="setup-btn" style="width: 100%; margin-bottom: 8px;">⚙️ Configure API URL</button>
-        <div style="font-size: 11px; color: #6b7280; text-align: center; margin-top: 12px;">
-          <strong>Don't have an API URL?</strong><br>
-          Ask your team lead for the Google Apps Script deployment URL.
-        </div>
+
+        <div id="onboardingMessage" class="message"></div>
+
+        <form id="onboardingForm" class="onboarding-form">
+          <div class="form-group">
+            <label for="scoutEmail">Email</label>
+            <div class="input-wrapper">
+              <span class="input-icon">✉️</span>
+              <input
+                type="email"
+                id="scoutEmail"
+                placeholder="your.email@company.com"
+                required
+              >
+            </div>
+            <div class="form-hint">Your registered email</div>
+          </div>
+
+          <button type="submit" class="btn-primary btn-large">Save & Continue</button>
+        </form>
       </div>
     </div>
 
-    <!-- Login Section -->
-    <div id="login-section" style="display: none;">
-      <div class="header">
-        <div class="logo">CS</div>
-        <h1>Creator Scout</h1>
-      </div>
-      <div class="section">
-        <div class="section-title">Sign In</div>
-        <div style="margin-bottom: 16px;">
-          <label style="display: block; font-weight: 600; margin-bottom: 6px; font-size: 13px;">Your Email</label>
-          <input type="email" id="login-email-input" placeholder="your.email@gmail.com" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; box-sizing: border-box;">
-          <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">Enter your email to get your Scout ID</div>
-        </div>
-        <div id="login-message" style="font-size: 12px; color: #6b7280; margin-bottom: 12px; text-align: center;"></div>
-        <button class="btn btn-primary" id="login-btn" style="width: 100%;">Sign In</button>
-      </div>
-    </div>
-
-    <!-- Dashboard Section -->
-    <div id="dashboard-section" style="display: none;">
-      <div class="header">
-        <div class="logo">CS</div>
-        <h1>Creator Scout</h1>
-      </div>
-
-    <div class="section">
-      <div class="section-title">Your Dashboard</div>
-      <div class="stats">
-        <div class="stat-box">
-          <div class="stat-number" id="stat-new">0</div>
-          <div class="stat-label">New</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-number" id="stat-pending">0</div>
-          <div class="stat-label">Pending</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-number" id="stat-contacted">0</div>
-          <div class="stat-label">Contacted</div>
+    <!-- Collapsed View (shown by default after setup - ultra minimal) -->
+    <div id="collapsedView" class="collapsed-view hidden">
+      <div class="collapsed-glass">
+        <div class="collapsed-header">
+          <div class="collapsed-status">
+            <span class="collapsed-icon">✓</span>
+            <span class="collapsed-text" id="collapsedStatusText">Logged In</span>
+          </div>
+          <div class="collapsed-controls">
+            <button id="collapsedSettings" class="collapsed-btn settings-icon" title="Settings">⚙️</button>
+            <button id="collapsedExpand" class="collapsed-btn expand-icon" title="Expand">▼</button>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="section">
-      <div class="section-title">Quick Actions</div>
-      <div class="info-box">
-        <p>📍 Open a creator profile on LinkedIn, Twitter/X, or Instagram to get started.</p>
-      </div>
-      <div class="actions">
-        <button class="btn btn-secondary" id="open-dashboard">View All Creators</button>
-        <button class="btn btn-secondary" id="settings">Settings</button>
+    <!-- Compact View (shown after setup, minimal UI) -->
+    <div id="compactView" class="compact-view hidden">
+      <div class="compact-glass">
+        <div class="compact-header">
+          <span class="compact-logo">🔍</span>
+          <button id="compactSettings" class="settings-btn">⚙️</button>
+        </div>
+
+        <div id="compactMessage" class="message"></div>
+
+        <div id="compactStatusWidget" class="status-widget" style="display: none;">
+          <div class="status-icon" id="compactStatusIcon">●</div>
+          <div class="status-content">
+            <div class="status-label" id="compactStatusLabel">Loading...</div>
+            <div class="status-sublabel" id="compactStatusSublabel"></div>
+          </div>
+        </div>
+
+        <div id="compactActionButtons" class="action-buttons-row" style="display: none;">
+          <button type="button" class="action-btn action-status-btn" data-status="locked_in" title="Mark as Locked In">🔒 Locked</button>
+          <button type="button" class="action-btn action-status-btn" data-status="hold" title="Mark as Hold">⏸ Hold</button>
+        </div>
       </div>
     </div>
 
-    <div class="section">
-      <div class="section-title">Your Scout ID</div>
-      <div style="padding: 12px; background: #f3f4f6; border-radius: 6px;">
-        <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Auto-generated</div>
-        <div style="font-size: 13px; font-weight: 600; color: #111827; word-break: break-all; margin-bottom: 8px; font-family: monospace;" id="scout-id-display"></div>
-        <button class="btn btn-secondary" id="copy-scout-id-btn" style="width: 100%;">📋 Copy ID</button>
+    <!-- Dashboard View (shown after setup, full UI) - now hidden by default -->
+    <div id="dashboardView" class="dashboard-view hidden">
+      <div class="dashboard-glass">
+        <div class="dashboard-header">
+          <div>
+            <h1 class="dashboard-logo">🔍 Creator Scout</h1>
+            <p class="logged-in-email" id="loggedInEmail"></p>
+          </div>
+          <button id="settingsToggle" class="settings-btn">⚙️</button>
+        </div>
+
+        <div id="dashboardMessage" class="message"></div>
+
+        <div id="statusWidget" class="status-widget" style="display: none;">
+          <div class="status-icon" id="statusIcon">●</div>
+          <div class="status-content">
+            <div class="status-label" id="statusLabel">Loading...</div>
+            <div class="status-sublabel" id="statusSublabel"></div>
+            <div class="status-selector-container" id="dashboardStatusSelector" style="display: none; margin-top: 8px;">
+              <div class="status-selector-pills">
+                <button type="button" class="status-pill" data-status="saved" title="Saved">Saved</button>
+                <button type="button" class="status-pill" data-status="locked_in" title="Locked In">Locked</button>
+                <button type="button" class="status-pill" data-status="hold" title="Hold">Hold</button>
+                <button type="button" class="status-pill" data-status="not_saved" title="Not Saved">Not Saved</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
-      <div class="footer">
-        Creator Scout v1.0 | Made with ❤️
-        <button class="btn btn-secondary" id="logout-btn" style="width: 100%; margin-top: 12px; padding: 8px;">Sign Out</button>
+    <!-- Settings Modal (overlay) -->
+    <div id="settingsModal" class="settings-modal hidden">
+      <div class="settings-glass">
+        <div class="settings-header">
+          <h2>Settings</h2>
+        </div>
+
+        <div id="settingsMessage" class="message"></div>
+
+        <form id="settingsForm" class="settings-form">
+          <div class="form-group">
+            <label for="settingsEmail">Email</label>
+            <div class="input-wrapper">
+              <span class="input-icon">✉️</span>
+              <input
+                type="email"
+                id="settingsEmail"
+                placeholder="your.email@company.com"
+                required
+              >
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Workspace</label>
+            <div class="workspace-status">
+              <div class="status-item">
+                <span class="status-check">✓</span>
+                <span>Workspace Connected</span>
+              </div>
+              <div class="status-item">
+                <span class="status-info">•</span>
+                <span>Managed by Lead</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <div class="templates-header">
+              <label>DM Templates</label>
+              <button type="button" class="edit-templates-btn" id="editTemplatesBtn" title="Edit template names">✏️ Edit</button>
+            </div>
+            <div class="template-selector">
+              <button type="button" class="template-pill active" data-template="template1" id="templateBtn1">
+                <span class="template-label">1</span>
+              </button>
+              <button type="button" class="template-pill" data-template="template2" id="templateBtn2">
+                <span class="template-label">2</span>
+              </button>
+              <button type="button" class="template-pill" data-template="template3" id="templateBtn3">
+                <span class="template-label">3</span>
+              </button>
+            </div>
+
+            <textarea
+              id="autoDmTemplate"
+              class="form-textarea"
+              placeholder="Hi {{creator_name}}, I'd love to collaborate..."
+            ></textarea>
+            <div class="form-hint">Use {{creator_name}} to insert creator's name</div>
+          </div>
+
+          <button type="submit" class="btn-primary btn-large">Update Settings</button>
+        </form>
       </div>
     </div>
-  </div>
 
-  <!-- Settings Modal -->
-  <div id="settings-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999; padding: 20px;">
-    <div style="background: white; border-radius: 12px; padding: 20px; max-width: 500px; margin: auto; margin-top: 30px; max-height: 85vh; overflow-y: auto;">
-      <h2 style="margin-top: 0; margin-bottom: 16px; font-size: 18px;">⚙️ Settings</h2>
+    <!-- Edit Templates Modal (overlay) -->
+    <div id="editTemplatesModal" class="edit-templates-modal hidden">
+      <div class="edit-templates-glass">
+        <div class="edit-templates-header">
+          <h2>Edit Template Names</h2>
+          <button type="button" class="close-btn" id="closeEditModal" title="Close">✕</button>
+        </div>
 
-      <div style="margin-bottom: 16px;">
-        <label style="display: block; font-weight: 600; margin-bottom: 6px; font-size: 13px;">Your Scout Name</label>
-        <input type="text" id="scout-name-input" placeholder="e.g., John Doe" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; box-sizing: border-box;">
-        <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">Your name or identifier (so team knows who scouted each creator)</div>
-      </div>
+        <form id="editTemplatesForm" class="edit-templates-form">
+          <div class="edit-template-item">
+            <label for="editTemplateName1">Template 1 Name</label>
+            <input
+              type="text"
+              id="editTemplateName1"
+              placeholder="e.g., Casual, Professional, Direct"
+              maxlength="30"
+            >
+          </div>
 
-      <div style="margin-bottom: 16px;">
-        <label style="display: block; font-weight: 600; margin-bottom: 6px; font-size: 13px;">Google Apps Script URL</label>
-        <input type="text" id="api-url-input" placeholder="https://script.google.com/macros/s/..." style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; box-sizing: border-box;">
-        <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">Get this from your Google Apps Script deployment</div>
-      </div>
+          <div class="edit-template-item">
+            <label for="editTemplateName2">Template 2 Name</label>
+            <input
+              type="text"
+              id="editTemplateName2"
+              placeholder="e.g., Casual, Professional, Direct"
+              maxlength="30"
+            >
+          </div>
 
-      <div style="margin-bottom: 16px;">
-        <label style="display: block; font-weight: 600; margin-bottom: 6px; font-size: 13px;">Outreach Message Template</label>
-        <textarea id="message-template-input" placeholder="Hey @{username}! We'd love to collaborate..." style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; box-sizing: border-box; resize: vertical; min-height: 80px; font-family: monospace;"></textarea>
-        <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">Use {username} as placeholder. This message will be copied to clipboard.</div>
-      </div>
+          <div class="edit-template-item">
+            <label for="editTemplateName3">Template 3 Name</label>
+            <input
+              type="text"
+              id="editTemplateName3"
+              placeholder="e.g., Casual, Professional, Direct"
+              maxlength="30"
+            >
+          </div>
 
-      <div id="settings-message" style="font-size: 12px; color: #6b7280; margin-bottom: 12px; text-align: center;"></div>
-
-      <div style="display: flex; gap: 8px;">
-        <button class="btn btn-primary" id="save-settings-btn" style="flex: 1;">Save Settings</button>
-        <button class="btn btn-secondary" id="close-settings-btn" style="flex: 1;">Cancel</button>
+          <button type="submit" class="btn-primary btn-large">Save Names</button>
+        </form>
       </div>
     </div>
   </div>

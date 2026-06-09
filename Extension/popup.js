@@ -1,276 +1,1109 @@
-// popup.js - Popup UI logic
+// Speed Optimization 1: Non-blocking initialization
+// Render UI shell immediately, load data async
+let lastCheckedCreator = null;
+let lastStatusCheckTime = 0;
+const STATUS_CHECK_DEBOUNCE_MS = 2000;
 
-const SCOUT_ID_KEY = 'scout_id';
-const SCOUT_NAME_KEY = 'scout_name';
-const SCOUT_EMAIL_KEY = 'scout_email';
-const API_URL_KEY = 'scout_api_base';
-const MESSAGE_TEMPLATE_KEY = 'scout_message_template';
-const DEFAULT_MESSAGE = 'Hey @{username}! We work on product launches and would love to collaborate. Are you open to sponsored partnerships?';
+// HARDCODED: Team Lead's Apps Script Deployment URL
+// Replace with your actual deployment URL
+const TEAM_LEAD_GAS_URL = 'https://script.google.com/macros/s/AKfycbyQlblbVzMe-L0RXH2r-E0fLOF36ReLcyDCKmVI4pj_zkKDsoOlAu3QpgPuQRr5gw1cig/exec';
 
-// Initialize popup
-function init() {
-  checkSetupStatus();
-  attachEventListeners();
-}
+document.addEventListener('DOMContentLoaded', () => {
+  // Show onboarding by default (fastest render)
+  showOnboardingView();
 
-// Check if API URL is configured before showing login
-function checkSetupStatus() {
-  chrome.storage.local.get([SCOUT_ID_KEY, SCOUT_EMAIL_KEY, API_URL_KEY], (result) => {
-    const hasLogin = result[SCOUT_ID_KEY] && result[SCOUT_EMAIL_KEY];
-    const hasApiUrl = result[API_URL_KEY];
+  // Load configuration async (non-blocking)
+  checkConfigurationStatus();
 
-    if (hasLogin) {
-      // Already logged in
-      showDashboard();
-      displayScoutInfo();
-    } else if (!hasApiUrl) {
-      // Not logged in and API URL not configured - show setup prompt
-      showSetupPrompt();
-    } else {
-      // Not logged in but API URL is configured - show login
-      showLoginScreen();
+  // Setup event listeners for edit templates modal
+  const editTemplatesBtn = document.getElementById('editTemplatesBtn');
+  const closeEditModalBtn = document.getElementById('closeEditModal');
+  const editTemplatesForm = document.getElementById('editTemplatesForm');
+
+  if (editTemplatesBtn) {
+    editTemplatesBtn.addEventListener('click', openEditModal);
+  }
+
+  if (closeEditModalBtn) {
+    closeEditModalBtn.addEventListener('click', closeEditModal);
+  }
+
+  if (editTemplatesForm) {
+    editTemplatesForm.addEventListener('submit', handleEditTemplatesSubmit);
+  }
+
+  // Close modal when clicking outside
+  const editTemplatesModal = document.getElementById('editTemplatesModal');
+  if (editTemplatesModal) {
+    editTemplatesModal.addEventListener('click', (e) => {
+      if (e.target === editTemplatesModal) {
+        closeEditModal();
+      }
+    });
+  }
+
+  // Setup status pill event listeners
+  setupStatusPillListeners();
+
+  // Setup action button event listeners
+  setupActionButtonListeners();
+});
+
+// Listen for profile change notifications from content script (direct message)
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'profileChanged') {
+    // Re-check creator status when profile changes
+    chrome.storage.local.get([
+      'SCOUT_EMAIL',
+      'GAS_URL',
+      'PERSONAL_SHEET_ID'
+    ], (stored) => {
+      checkCreatorStatus(stored);
+    });
+  }
+});
+
+// Listen for storage changes (detects profile changes even if popup was closed)
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  console.log('[Creator Scout Popup] Storage changed:', { areaName, changes });
+  if (areaName === 'local' && (changes.LAST_PROFILE_URL || changes.PROFILE_CHANGED_TIMESTAMP)) {
+    console.log('[Creator Scout Popup] Profile changed detected, reloading status...');
+    // Profile has changed - reload creator status
+    chrome.storage.local.get([
+      'SCOUT_EMAIL',
+      'GAS_URL',
+      'PERSONAL_SHEET_ID'
+    ], (stored) => {
+      if (stored.SCOUT_EMAIL && stored.GAS_URL && stored.PERSONAL_SHEET_ID) {
+        console.log('[Creator Scout Popup] Calling checkCreatorStatus...');
+        checkCreatorStatus(stored);
+      }
+    });
+  }
+});
+
+// Speed Optimization: Non-blocking configuration check
+// Show view immediately, hydrate data async
+function checkConfigurationStatus() {
+  chrome.storage.local.get([
+    'SCOUT_EMAIL',
+    'GAS_URL',
+    'PERSONAL_SHEET_ID'
+  ], (stored) => {
+    const isConfigured = stored.SCOUT_EMAIL && stored.GAS_URL && stored.PERSONAL_SHEET_ID;
+
+    if (isConfigured) {
+      // Already showing onboarding, switch to settings
+      // Load settings data async (non-blocking)
+      loadSettingsToModal(stored);
+      showSettingsView();
+      // Load dashboard data in background
+      loadDashboardData();
     }
   });
 }
 
-// UI State Functions
-function showSetupPrompt() {
-  document.getElementById('setup-section').style.display = 'block';
-  document.getElementById('login-section').style.display = 'none';
-  document.getElementById('dashboard-section').style.display = 'none';
+// Show onboarding view
+function showOnboardingView() {
+  document.getElementById('onboardingView').classList.remove('hidden');
+  document.getElementById('collapsedView').classList.add('hidden');
+  document.getElementById('compactView').classList.add('hidden');
+  document.getElementById('dashboardView').classList.add('hidden');
+  document.getElementById('settingsModal').classList.add('hidden');
+
+  // Setup onboarding form submission
+  document.getElementById('onboardingForm').addEventListener('submit', handleOnboardingSubmit);
 }
 
-function showLoginScreen() {
-  document.getElementById('setup-section').style.display = 'none';
-  document.getElementById('login-section').style.display = 'block';
-  document.getElementById('dashboard-section').style.display = 'none';
+// Show settings view directly (default after setup)
+function showSettingsView() {
+  document.getElementById('onboardingView').classList.add('hidden');
+  document.getElementById('collapsedView').classList.add('hidden');
+  document.getElementById('compactView').classList.add('hidden');
+  document.getElementById('dashboardView').classList.add('hidden');
+  document.getElementById('settingsModal').classList.remove('hidden');
+
+  const settingsForm = document.getElementById('settingsForm');
+  if (settingsForm) {
+    settingsForm.removeEventListener('submit', handleSettingsSubmit);
+    settingsForm.addEventListener('submit', handleSettingsSubmit);
+  }
 }
 
-function showDashboard() {
-  document.getElementById('setup-section').style.display = 'none';
-  document.getElementById('login-section').style.display = 'none';
-  document.getElementById('dashboard-section').style.display = 'block';
+// Show collapsed view (default after setup)
+function showCollapsedView() {
+  document.getElementById('onboardingView').classList.add('hidden');
+  document.getElementById('collapsedView').classList.remove('hidden');
+  document.getElementById('compactView').classList.add('hidden');
+  document.getElementById('dashboardView').classList.add('hidden');
+
+  // Setup collapsed view button listeners
+  const settingsBtn = document.getElementById('collapsedSettings');
+  if (settingsBtn) {
+    settingsBtn.removeEventListener('click', openSettings);
+    settingsBtn.addEventListener('click', openSettings);
+  }
+
+  const expandBtn = document.getElementById('collapsedExpand');
+  if (expandBtn) {
+    expandBtn.removeEventListener('click', expandToCompactView);
+    expandBtn.addEventListener('click', expandToCompactView);
+  }
+
+  const settingsForm = document.getElementById('settingsForm');
+  if (settingsForm) {
+    settingsForm.removeEventListener('submit', handleSettingsSubmit);
+    settingsForm.addEventListener('submit', handleSettingsSubmit);
+  }
 }
 
-function handleSetupClick() {
-  showSettingsModal();
+// Expand from collapsed to compact view
+function expandToCompactView() {
+  document.getElementById('collapsedView').classList.add('hidden');
+  document.getElementById('compactView').classList.remove('hidden');
+
+  const compactSettings = document.getElementById('compactSettings');
+  if (compactSettings) {
+    compactSettings.removeEventListener('click', openSettings);
+    compactSettings.addEventListener('click', openSettings);
+  }
+
+  const settingsForm = document.getElementById('settingsForm');
+  if (settingsForm) {
+    settingsForm.removeEventListener('submit', handleSettingsSubmit);
+    settingsForm.addEventListener('submit', handleSettingsSubmit);
+  }
 }
 
-async function handleLogin() {
-  const email = document.getElementById('login-email-input').value.trim();
-  const messageDiv = document.getElementById('login-message');
+// Show compact view (minimized, accessible via expand)
+function showCompactView() {
+  document.getElementById('onboardingView').classList.add('hidden');
+  document.getElementById('collapsedView').classList.add('hidden');
+  document.getElementById('compactView').classList.remove('hidden');
+  document.getElementById('dashboardView').classList.add('hidden');
+
+  // Setup compact view elements
+  const compactSettings = document.getElementById('compactSettings');
+  if (compactSettings) {
+    compactSettings.removeEventListener('click', openSettings);
+    compactSettings.addEventListener('click', openSettings);
+  }
+
+  const settingsForm = document.getElementById('settingsForm');
+  if (settingsForm) {
+    settingsForm.removeEventListener('submit', handleSettingsSubmit);
+    settingsForm.addEventListener('submit', handleSettingsSubmit);
+  }
+}
+
+// Show dashboard view (full UI, hidden by default)
+function showDashboardView() {
+  document.getElementById('onboardingView').classList.add('hidden');
+  document.getElementById('collapsedView').classList.add('hidden');
+  document.getElementById('compactView').classList.add('hidden');
+  document.getElementById('dashboardView').classList.remove('hidden');
+
+  // Setup settings button
+  const settingsToggle = document.getElementById('settingsToggle');
+  if (settingsToggle) {
+    settingsToggle.removeEventListener('click', openSettings);
+    settingsToggle.addEventListener('click', openSettings);
+  }
+
+  const settingsForm = document.getElementById('settingsForm');
+  if (settingsForm) {
+    settingsForm.removeEventListener('submit', handleSettingsSubmit);
+    settingsForm.addEventListener('submit', handleSettingsSubmit);
+  }
+}
+
+// Speed Optimization 2: Optimistic UI for onboarding
+// Show loading state immediately, validate/save async
+async function handleOnboardingSubmit(e) {
+  e.preventDefault();
+
+  const email = document.getElementById('scoutEmail').value.trim().toLowerCase();
+  const submitBtn = e.target.querySelector('button[type="submit"]');
 
   if (!email) {
-    messageDiv.textContent = '❌ Please enter your email';
-    messageDiv.style.color = '#dc2626';
+    showMessage('Please enter your email', 'error', 'onboardingMessage');
     return;
   }
 
-  if (!email.includes('@')) {
-    messageDiv.textContent = '❌ Please enter a valid email';
-    messageDiv.style.color = '#dc2626';
-    return;
-  }
+  // Disable button immediately (instant feedback)
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Saving...';
+  showMessage('⟳ Setting up...', 'info', 'onboardingMessage');
 
-  chrome.storage.local.get([API_URL_KEY], async (result) => {
-    const apiUrl = result[API_URL_KEY];
-
-    if (!apiUrl) {
-      messageDiv.innerHTML = '❌ API URL not configured. <a href="#" id="api-config-link" style="color: #1e40af; text-decoration: underline;">Configure in settings</a>';
-      messageDiv.style.color = '#dc2626';
-
-      // Attach event listener to the dynamically created link
-      const configLink = document.getElementById('api-config-link');
-      if (configLink) {
-        configLink.addEventListener('click', (e) => {
-          e.preventDefault();
-          showSettingsModal();
-        });
+  // Do validation and storage async (non-blocking)
+  validateEmailWithGAS(email, TEAM_LEAD_GAS_URL)
+    .then((result) => {
+      if (!result.valid) {
+        showMessage('No sheet assigned. Contact lead.', 'error', 'onboardingMessage');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Save & Continue';
+        return;
       }
+
+      if (!result.sheet_id) {
+        showMessage('No sheet assigned. Contact lead.', 'error', 'onboardingMessage');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Save & Continue';
+        return;
+      }
+
+      // Save config with auto-fetched sheet_id
+      chrome.storage.local.set({
+        'SCOUT_EMAIL': email,
+        'GAS_URL': TEAM_LEAD_GAS_URL,
+        'PERSONAL_SHEET_ID': result.sheet_id
+      });
+
+      // Show success immediately
+      showMessage('✓ Successfully Logged In', 'success', 'onboardingMessage');
+
+      // Switch to settings view immediately (no delay)
+      const stored = { SCOUT_EMAIL: email, GAS_URL: TEAM_LEAD_GAS_URL, PERSONAL_SHEET_ID: result.sheet_id };
+      loadSettingsToModal(stored);
+      showSettingsView();
+
+      // Load dashboard data in background
+      loadDashboardData();
+    })
+    .catch((error) => {
+      showMessage('Error validating email: ' + error.message, 'error', 'onboardingMessage');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Save & Continue';
+    });
+}
+
+// Load dashboard data (works for both compact and dashboard views)
+async function loadDashboardData() {
+  const stored = await chrome.storage.local.get([
+    'SCOUT_EMAIL',
+    'GAS_URL',
+    'PERSONAL_SHEET_ID'
+  ]);
+
+  // Display logged-in email (in dashboard view)
+  const loggedInEmail = document.getElementById('loggedInEmail');
+  if (loggedInEmail && stored.SCOUT_EMAIL) {
+    loggedInEmail.textContent = stored.SCOUT_EMAIL;
+  }
+
+  // Initialize widgets as hidden/ready
+  const statusWidget = document.getElementById('statusWidget');
+  if (statusWidget) {
+    statusWidget.style.display = 'none';
+  }
+
+  const compactStatusWidget = document.getElementById('compactStatusWidget');
+  if (compactStatusWidget) {
+    compactStatusWidget.style.display = 'none';
+  }
+
+  await loadSettingsToModal(stored);
+  await checkCreatorStatus(stored);
+}
+
+// Load settings into modal
+async function loadSettingsToModal(stored) {
+  if (stored.SCOUT_EMAIL) {
+    document.getElementById('settingsEmail').value = stored.SCOUT_EMAIL;
+  }
+  // GAS_URL is now hardcoded - no need to display it
+
+  // Load all three templates from storage
+  const templates = await chrome.storage.local.get([
+    'autoDmTemplate1',
+    'autoDmTemplate2',
+    'autoDmTemplate3',
+    'activeTemplate'
+  ]);
+
+  // Default templates if not yet set
+  const template1 = templates.autoDmTemplate1 || 'Hi {{creator_name}}! Hope you are doing well.\n\nWe really liked your profile and would love to collaborate with you.';
+  const template2 = templates.autoDmTemplate2 || 'Hey {{creator_name}},\n\nYour content resonates with our audience. Let\'s discuss potential collaboration opportunities!';
+  const template3 = templates.autoDmTemplate3 || 'Hi {{creator_name}},\n\nWe admire your work and think there could be a great partnership opportunity. Are you open to chatting?';
+
+  // Set dropdown to active template (default to template1)
+  const activeTemplate = templates.activeTemplate || 'template1';
+  const dropdown = document.getElementById('autoDmTemplateSelect');
+  if (dropdown) {
+    dropdown.value = activeTemplate;
+  }
+
+  // Set textarea to active template content
+  const autoDmField = document.getElementById('autoDmTemplate');
+  if (activeTemplate === 'template1') {
+    autoDmField.value = template1;
+  } else if (activeTemplate === 'template2') {
+    autoDmField.value = template2;
+  } else if (activeTemplate === 'template3') {
+    autoDmField.value = template3;
+  }
+
+  // Load template names from storage
+  const templateNames = await chrome.storage.local.get('templateNames');
+  const names = templateNames.templateNames || {
+    template1: '1',
+    template2: '2',
+    template3: '3'
+  };
+
+  // Store templates globally for use in button handlers
+  window.__dmTemplates = {
+    template1,
+    template2,
+    template3,
+    activeTemplate,
+    names
+  };
+
+  // Update button labels with template names
+  document.getElementById('templateBtn1').querySelector('.template-label').textContent = names.template1;
+  document.getElementById('templateBtn2').querySelector('.template-label').textContent = names.template2;
+  document.getElementById('templateBtn3').querySelector('.template-label').textContent = names.template3;
+
+  // Setup template pill buttons
+  setupTemplateButtons(activeTemplate);
+}
+
+// Setup template pill button listeners
+function setupTemplateButtons(activeTemplate) {
+  document.querySelectorAll('.template-pill').forEach(btn => {
+    btn.removeEventListener('click', handleTemplateButtonClick);
+    btn.addEventListener('click', handleTemplateButtonClick);
+  });
+
+  // Set active template in textarea
+  const textarea = document.getElementById('autoDmTemplate');
+  if (window.__dmTemplates && textarea) {
+    textarea.value = window.__dmTemplates[activeTemplate];
+  }
+
+  // Update UI to highlight active button
+  updateTemplateButtonUI(activeTemplate);
+}
+
+// Handle template pill button click
+function handleTemplateButtonClick(e) {
+  const templateId = e.currentTarget.dataset.template;
+
+  // Update global active template
+  window.__dmTemplates.activeTemplate = templateId;
+
+  // Update textarea with new template content
+  const textarea = document.getElementById('autoDmTemplate');
+  if (window.__dmTemplates && textarea) {
+    textarea.value = window.__dmTemplates[templateId];
+  }
+
+  // Update button UI
+  updateTemplateButtonUI(templateId);
+
+  // Save active template to storage
+  chrome.storage.local.set({ activeTemplate: templateId });
+}
+
+// Update template button UI to show active state
+function updateTemplateButtonUI(activeTemplate) {
+  document.querySelectorAll('.template-pill').forEach(btn => {
+    btn.classList.remove('active');
+  });
+
+  const activeBtn = document.querySelector(`[data-template="${activeTemplate}"]`);
+  if (activeBtn) {
+    activeBtn.classList.add('active');
+  }
+}
+
+// Open settings modal
+function openSettings() {
+  document.getElementById('settingsModal').classList.remove('hidden');
+
+  // Re-attach edit button listener (ensures it works after any DOM changes)
+  const editTemplatesBtn = document.getElementById('editTemplatesBtn');
+  if (editTemplatesBtn) {
+    editTemplatesBtn.removeEventListener('click', openEditModal);
+    editTemplatesBtn.addEventListener('click', openEditModal);
+  }
+
+  // Reload settings when modal opens (ensures fresh data)
+  chrome.storage.local.get([
+    'SCOUT_EMAIL',
+    'GAS_URL',
+    'PERSONAL_SHEET_ID'
+  ], (stored) => {
+    loadSettingsToModal(stored);
+  });
+}
+
+// Close settings modal
+function closeSettings() {
+  document.getElementById('settingsModal').classList.add('hidden');
+}
+
+// Open edit templates modal
+function openEditModal() {
+  const modal = document.getElementById('editTemplatesModal');
+  modal.classList.remove('hidden');
+
+  // Load current template names into edit form
+  const names = window.__dmTemplates?.names || {
+    template1: '1',
+    template2: '2',
+    template3: '3'
+  };
+
+  document.getElementById('editTemplateName1').value = names.template1;
+  document.getElementById('editTemplateName2').value = names.template2;
+  document.getElementById('editTemplateName3').value = names.template3;
+}
+
+// Close edit templates modal
+function closeEditModal() {
+  document.getElementById('editTemplatesModal').classList.add('hidden');
+}
+
+// Handle edit templates form submission
+function handleEditTemplatesSubmit(e) {
+  e.preventDefault();
+
+  const name1 = document.getElementById('editTemplateName1').value.trim() || '1';
+  const name2 = document.getElementById('editTemplateName2').value.trim() || '2';
+  const name3 = document.getElementById('editTemplateName3').value.trim() || '3';
+
+  const templateNames = {
+    template1: name1,
+    template2: name2,
+    template3: name3
+  };
+
+  // Save to storage
+  chrome.storage.local.set({ templateNames });
+
+  // Update global names
+  if (window.__dmTemplates) {
+    window.__dmTemplates.names = templateNames;
+  }
+
+  // Update button labels immediately
+  document.getElementById('templateBtn1').querySelector('.template-label').textContent = name1;
+  document.getElementById('templateBtn2').querySelector('.template-label').textContent = name2;
+  document.getElementById('templateBtn3').querySelector('.template-label').textContent = name3;
+
+  // Close modal
+  closeEditModal();
+
+  // Show success message
+  showMessage('✓ Template names updated', 'success', 'settingsMessage');
+}
+
+// Speed Optimization 3: Optimistic UI for settings
+// Show loading state immediately, validate/save async
+async function handleSettingsSubmit(e) {
+  e.preventDefault();
+
+  const email = document.getElementById('settingsEmail').value.trim().toLowerCase();
+  const activeTemplate = window.__dmTemplates?.activeTemplate || 'template1';
+  const currentTemplateText = document.getElementById('autoDmTemplate').value.trim();
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+
+  if (!email) {
+    showMessage('Please fill in all fields', 'error', 'settingsMessage');
+    return;
+  }
+
+  // Disable button immediately (instant feedback)
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Saving...';
+  showMessage('⟳ Updating...', 'info', 'settingsMessage');
+
+  // Get current sheet ID from storage (scouts can't change it)
+  const stored = await chrome.storage.local.get(['PERSONAL_SHEET_ID']);
+  const personalSheetId = stored.PERSONAL_SHEET_ID;
+
+  // Do validation and storage async (non-blocking)
+  validateEmailWithGAS(email, TEAM_LEAD_GAS_URL)
+    .then((result) => {
+      if (!result.valid) {
+        showMessage('Email not registered. Contact your team lead.', 'error', 'settingsMessage');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Update Settings';
+        return;
+      }
+
+      // Build storage object with all three templates
+      const storageData = {
+        'SCOUT_EMAIL': email,
+        'GAS_URL': TEAM_LEAD_GAS_URL,
+        'PERSONAL_SHEET_ID': personalSheetId,
+        'activeTemplate': activeTemplate
+      };
+
+      // Save the currently edited template to its storage key
+      if (activeTemplate === 'template1') {
+        storageData['autoDmTemplate1'] = currentTemplateText;
+      } else if (activeTemplate === 'template2') {
+        storageData['autoDmTemplate2'] = currentTemplateText;
+      } else if (activeTemplate === 'template3') {
+        storageData['autoDmTemplate3'] = currentTemplateText;
+      }
+
+      // Save config
+      chrome.storage.local.set(storageData);
+
+      // Show success immediately (no wait)
+      showMessage('✓ Settings Updated', 'success', 'settingsMessage');
+
+      // Close modal and refresh status immediately
+      closeSettings();
+      lastCheckedCreator = null;
+      lastStatusCheckTime = 0;
+      checkCreatorStatus({ SCOUT_EMAIL: email, GAS_URL: TEAM_LEAD_GAS_URL, PERSONAL_SHEET_ID: personalSheetId });
+
+      // Re-enable button after a moment
+      setTimeout(() => {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Update Settings';
+      }, 500);
+    })
+    .catch((error) => {
+      showMessage('Error validating email: ' + error.message, 'error', 'settingsMessage');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Update Settings';
+    });
+}
+
+// Validate email exists in Scouts tab and fetch assigned sheet_id via Apps Script
+async function validateEmailWithGAS(email, gasUrl) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      {
+        action: 'validateEmail',
+        email: email.trim().toLowerCase()
+      },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error('Could not connect to deployment URL'));
+        } else if (response.error) {
+          reject(new Error(response.error));
+        } else {
+          resolve({
+            valid: response.valid === true,
+            sheet_id: response.sheet_id || null
+          });
+        }
+      }
+    );
+  });
+}
+
+// Speed Optimization 4: Lightweight caching and debouncing
+// Avoid repeated extraction and API calls
+async function checkCreatorStatus(stored) {
+  console.log('[Creator Scout Popup] checkCreatorStatus called');
+
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  console.log('[Creator Scout Popup] Current tab URL:', tab.url);
+
+  // Check if URL has changed - if so, clear cache and reset debounce
+  const currentUrl = tab.url;
+  const cachedLastUrl = await chrome.storage.local.get(['LAST_POPUP_URL']);
+
+  if (cachedLastUrl.LAST_POPUP_URL !== currentUrl) {
+    console.log('[Creator Scout Popup] URL changed - clearing cache and resetting debounce');
+    // URL changed, clear creator cache and debounce
+    chrome.storage.local.set({ 'LAST_POPUP_URL': currentUrl });
+    lastCheckedCreator = null;
+    lastStatusCheckTime = 0;
+  } else {
+    // Same URL - check debounce
+    const now = Date.now();
+    if (lastCheckedCreator === stored && now - lastStatusCheckTime < STATUS_CHECK_DEBOUNCE_MS) {
+      console.log('[Creator Scout Popup] Skipping duplicate status check (debounced)');
+      return;
+    }
+  }
+
+  // Only work on supported platforms
+  const supportedDomains = ['linkedin.com', 'twitter.com', 'x.com', 'instagram.com'];
+  const isSupported = supportedDomains.some(domain => tab.url.includes(domain));
+
+  if (!isSupported) {
+    console.log('[Creator Scout Popup] Page not supported');
+    setStatusWidget('unsupported', 'This page is not supported');
+    return;
+  }
+
+  const email = stored.SCOUT_EMAIL;
+  const gasUrl = stored.GAS_URL;
+  const personalSheetId = stored.PERSONAL_SHEET_ID;
+
+  if (!email || !gasUrl || !personalSheetId) {
+    // Show status widget in whichever view is active
+    const compactWidget = document.getElementById('compactStatusWidget');
+    const dashboardWidget = document.getElementById('statusWidget');
+
+    if (compactWidget && !document.getElementById('compactView').classList.contains('hidden')) {
+      compactWidget.style.display = 'flex';
+    }
+    if (dashboardWidget && !document.getElementById('dashboardView').classList.contains('hidden')) {
+      dashboardWidget.style.display = 'flex';
+    }
+
+    setStatusWidget('setup', 'Please configure settings');
+    return;
+  }
+
+  try {
+    // Ensure widget is visible before calling setStatusWidget
+    const compactWidget = document.getElementById('compactStatusWidget');
+    const dashboardWidget = document.getElementById('statusWidget');
+
+    if (compactWidget && !document.getElementById('compactView').classList.contains('hidden')) {
+      compactWidget.style.display = 'flex';
+    }
+    if (dashboardWidget && !document.getElementById('dashboardView').classList.contains('hidden')) {
+      dashboardWidget.style.display = 'flex';
+    }
+
+    // Extract fresh creator data from page (don't use stale cache)
+    let creatorData;
+    try {
+      // Always extract fresh creator data to ensure we're showing correct profile
+      creatorData = await chrome.tabs.sendMessage(tab.id, {
+        action: 'getCreatorInfo'
+      });
+      console.log('[Creator Scout Popup] Fresh creator data extracted');
+    } catch (error) {
+      // Handle context invalidation or messaging errors
+      if (error.message && (error.message.includes('context invalidated') || error.message.includes('port closed') || error.message.includes('Could not establish connection'))) {
+        console.warn('[Creator Scout Popup] Extension context invalidated - page may need refresh');
+        setStatusWidget('error', 'Please refresh the page');
+        showMessage('⟳ Please refresh the page to reconnect', 'info', 'compactMessage');
+        return;
+      }
+      throw error;
+    }
+
+    console.log('[Creator Scout Popup] Creator data extracted:', creatorData);
+
+    if (!creatorData || !creatorData.profile_url) {
+      console.log('[Creator Scout Popup] Failed to extract creator info');
+      setStatusWidget('error', 'Could not extract creator profile');
       return;
     }
 
-    messageDiv.textContent = '⏳ Signing in...';
-    messageDiv.style.color = '#6b7280';
+    // PERFORMANCE FIX 2: Consolidate status fetch (was two sequential calls, now one)
+    // Fetch the actual status from the sheet (single call instead of checkScoutedStatus + getCreatorStatus)
+    console.log('[Creator Scout Popup] Fetching creator status for:', creatorData.profile_url);
+    const statusResult = await fetchCreatorStatusFromSheet(email, creatorData.profile_url, gasUrl, personalSheetId);
+    console.log('[Creator Scout Popup] Status result:', statusResult);
 
-    try {
-      // Call backend getScoutId action
-      const response = await fetch(`${apiUrl}?action=getScoutId&email=${encodeURIComponent(email)}`);
+    // Check if creator has a status (found in sheet with a valid status value)
+    if (statusResult && statusResult.status) {
+      console.log('[Creator Scout Popup] Creator is scouted with status:', statusResult.status);
 
-      if (!response.ok) {
-        messageDiv.textContent = '❌ Connection error. Check your API URL in settings.';
-        messageDiv.style.color = '#dc2626';
-        return;
-      }
+      const statusValue = statusResult.status;
+      const statusLabelMap = {
+        'saved': 'Saved',
+        'locked_in': 'Locked In',
+        'hold': 'On Hold',
+        'not_saved': 'Not Saved',
+        'new': 'Not Scouted'
+      };
 
-      const data = await response.json();
+      setStatusWidget(statusValue, statusLabelMap[statusValue] || statusValue);
 
-      if (!data.success) {
-        messageDiv.textContent = `❌ ${data.message || 'Login failed'}`;
-        messageDiv.style.color = '#dc2626';
-        return;
-      }
+      // Store the actual status
+      creatorData.status = statusValue;
 
-      // Store scout identity from backend
-      chrome.storage.local.set({
-        [SCOUT_ID_KEY]: data.scout_id,
-        [SCOUT_EMAIL_KEY]: email
-      }, () => {
-        messageDiv.textContent = '✅ Signed in!';
-        messageDiv.style.color = '#059669';
-        setTimeout(() => {
-          showDashboard();
-          displayScoutInfo();
-          document.getElementById('login-email-input').value = '';
-          messageDiv.textContent = '';
-        }, 500);
+      // PERFORMANCE FIX 2: Cache status immediately - merge with existing cache
+      chrome.storage.local.get(['CREATOR_STATUS_CACHE'], (result) => {
+        const cachedStatus = result.CREATOR_STATUS_CACHE || {};
+        cachedStatus[creatorData.profile_url] = statusValue;
+        chrome.storage.local.set({
+          'CREATOR_STATUS_CACHE': cachedStatus,
+          'CURRENT_CREATOR_DATA': JSON.stringify(creatorData)
+        });
       });
-    } catch (error) {
-      messageDiv.textContent = '❌ Network error';
-      messageDiv.style.color = '#dc2626';
-      console.error('Login error:', error);
+
+      // Update content script button status
+      try {
+        await chrome.tabs.sendMessage(tab.id, {
+          action: 'updateWidgetStatus',
+          status: statusValue
+        });
+      } catch (error) {
+        console.warn('[Creator Scout Popup] Could not update content script:', error);
+        // Non-critical error, continue
+      }
+    } else {
+      console.log('[Creator Scout Popup] Creator is not scouted');
+      setStatusWidget('new', 'Creator not scouted yet');
+
+      // Update content script button status
+      try {
+        await chrome.tabs.sendMessage(tab.id, {
+          action: 'updateWidgetStatus',
+          status: 'new'
+        });
+      } catch (error) {
+        console.warn('[Creator Scout Popup] Could not update content script:', error);
+        // Non-critical error, continue
+      }
     }
+
+    // Store current tab info for saving & caching
+    chrome.storage.local.set({
+      'CURRENT_CREATOR_DATA': creatorData,
+      'CURRENT_SCOUT_EMAIL': email,
+      'CURRENT_GAS_URL': gasUrl,
+      'CURRENT_PERSONAL_SHEET_ID': personalSheetId
+    });
+
+    // Update cache tracking to prevent duplicate checks
+    lastCheckedCreator = stored;
+    lastStatusCheckTime = Date.now();
+
+  } catch (error) {
+    console.error('[Creator Scout Popup] Error checking status:', error);
+
+    const compactWidget = document.getElementById('compactStatusWidget');
+    const dashboardWidget = document.getElementById('statusWidget');
+
+    if (compactWidget && !document.getElementById('compactView').classList.contains('hidden')) {
+      compactWidget.style.display = 'flex';
+    }
+    if (dashboardWidget && !document.getElementById('dashboardView').classList.contains('hidden')) {
+      dashboardWidget.style.display = 'flex';
+    }
+
+    setStatusWidget('error', 'Error checking status');
+  }
+}
+
+// Check if creator already scouted using Apps Script
+async function checkScoutedStatus(email, profileUrl, gasUrl, personalSheetId) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      {
+        action: 'checkCreatorStatus',
+        email: email,
+        profile_url: profileUrl
+      },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Error checking scouted status:', chrome.runtime.lastError);
+          resolve({ exists: false });
+        } else {
+          resolve(response || { exists: false });
+        }
+      }
+    );
   });
 }
 
-function handleLogout() {
-  chrome.storage.local.remove([SCOUT_ID_KEY, SCOUT_NAME_KEY, SCOUT_EMAIL_KEY], () => {
-    showLoginScreen();
-    document.getElementById('login-email-input').value = '';
-    document.getElementById('login-message').textContent = '';
+// Fetch actual creator status from sheet
+async function fetchCreatorStatusFromSheet(email, profileUrl, gasUrl, personalSheetId) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      {
+        action: 'getCreatorStatus',
+        email: email,
+        profile_url: profileUrl
+      },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Error fetching creator status:', chrome.runtime.lastError);
+          resolve({ status: null });
+        } else {
+          resolve(response || { status: null });
+        }
+      }
+    );
   });
 }
 
-function displayScoutInfo() {
-  chrome.storage.local.get([SCOUT_ID_KEY], (result) => {
-    const scoutId = result[SCOUT_ID_KEY] || 'Loading...';
-    document.getElementById('scout-id-display').textContent = scoutId;
+// Setup status pill event listeners (for interactive status switching)
+function setupStatusPillListeners() {
+  // Remove existing listeners first to avoid duplicates
+  const allPills = document.querySelectorAll('.status-pill');
+  allPills.forEach(pill => {
+    const newPill = pill.cloneNode(true);
+    pill.parentNode.replaceChild(newPill, pill);
   });
-}
 
-function copyScoutId() {
-  chrome.storage.local.get([SCOUT_ID_KEY], (result) => {
-    const scoutId = result[SCOUT_ID_KEY];
-    navigator.clipboard.writeText(scoutId).then(() => {
-      const btn = document.getElementById('copy-scout-id-btn');
-      const originalText = btn.textContent;
-      btn.textContent = '✅ Copied!';
-      setTimeout(() => {
-        btn.textContent = originalText;
-      }, 2000);
+  // Re-query after replacing
+  const compactPills = document.querySelectorAll('#compactStatusSelector .status-pill');
+  compactPills.forEach(pill => {
+    pill.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const newStatus = pill.getAttribute('data-status');
+      console.log('[Creator Scout] Status pill clicked:', newStatus);
+      await handleStatusChange(newStatus);
+    });
+  });
+
+  // Dashboard view status pills
+  const dashboardPills = document.querySelectorAll('.dashboard-view .status-selector-pills .status-pill');
+  dashboardPills.forEach(pill => {
+    pill.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const newStatus = pill.getAttribute('data-status');
+      console.log('[Creator Scout] Status pill clicked:', newStatus);
+      await handleStatusChange(newStatus);
     });
   });
 }
 
-// Settings Modal Functions
-function showSettingsModal() {
-  const modal = document.getElementById('settings-modal');
-  modal.style.display = 'block';
-  loadSettings();
+// Setup action button event listeners (for status change via action buttons)
+function setupActionButtonListeners() {
+  // Remove existing listeners first to avoid duplicates
+  const allButtons = document.querySelectorAll('.action-status-btn');
+  allButtons.forEach(btn => {
+    const newBtn = btn.cloneNode(true);
+    btn.parentNode.replaceChild(newBtn, btn);
+  });
+
+  // Re-query after replacing
+  const actionButtons = document.querySelectorAll('.action-status-btn');
+  actionButtons.forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const newStatus = btn.getAttribute('data-status');
+      console.log('[Creator Scout] Action button clicked:', newStatus);
+      await handleStatusChange(newStatus);
+    });
+  });
 }
 
-function closeSettingsModal() {
-  const modal = document.getElementById('settings-modal');
-  modal.style.display = 'none';
+// Handle status change - update UI, storage, and backend
+async function handleStatusChange(newStatus) {
+  try {
+    // Get current creator data from storage
+    const stored = await new Promise(resolve => {
+      chrome.storage.local.get([
+        'SCOUT_EMAIL',
+        'GAS_URL',
+        'PERSONAL_SHEET_ID',
+        'CURRENT_CREATOR_DATA'
+      ], resolve);
+    });
+
+    const { SCOUT_EMAIL, GAS_URL, PERSONAL_SHEET_ID, CURRENT_CREATOR_DATA } = stored;
+    if (!SCOUT_EMAIL || !GAS_URL || !PERSONAL_SHEET_ID || !CURRENT_CREATOR_DATA) {
+      showMessage('Missing configuration. Please set up again.', 'error', 'compactMessage');
+      return;
+    }
+
+    const creatorData = typeof CURRENT_CREATOR_DATA === 'string'
+      ? JSON.parse(CURRENT_CREATOR_DATA)
+      : CURRENT_CREATOR_DATA;
+
+    const profileUrl = creatorData.profile_url;
+    if (!profileUrl) {
+      showMessage('No creator selected.', 'error', 'compactMessage');
+      return;
+    }
+
+    // Update UI immediately (optimistic update)
+    updateStatusPillsUI(newStatus);
+    updateStatusWidgetDisplay(newStatus);
+
+    // Show loading state during update
+    const compactWidget = document.getElementById('compactStatusWidget');
+    const dashboardWidget = document.getElementById('statusWidget');
+    if (compactWidget) compactWidget.classList.add('status-loading');
+    if (dashboardWidget) dashboardWidget.classList.add('status-loading');
+
+    // Update in backend via service worker
+    const result = await new Promise((resolve) => {
+      chrome.runtime.sendMessage(
+        {
+          action: 'updateCreatorStatus',
+          email: SCOUT_EMAIL,
+          profile_url: profileUrl,
+          new_status: newStatus,
+          personalSheetId: PERSONAL_SHEET_ID
+        },
+        (response) => {
+          resolve(response || {});
+        }
+      );
+    });
+
+    if (result.error) {
+      showMessage('Failed to update status', 'error', 'compactMessage');
+      // Revert UI on error
+      loadDashboardData();
+      return;
+    }
+
+    // Store updated status in local storage
+    const updatedCreatorData = { ...creatorData, status: newStatus };
+
+    // PERFORMANCE FIX 2: Cache status immediately for persistence
+    chrome.storage.local.get(['CREATOR_STATUS_CACHE'], (result) => {
+      const cachedStatus = result.CREATOR_STATUS_CACHE || {};
+      cachedStatus[creatorData.profile_url] = newStatus;
+      chrome.storage.local.set({
+        CURRENT_CREATOR_DATA: JSON.stringify(updatedCreatorData),
+        CREATOR_STATUS_CACHE: cachedStatus
+      });
+    });
+
+    showMessage('Status updated', 'success', 'compactMessage');
+
+  } catch (error) {
+    console.error('Error updating status:', error);
+    showMessage('Error updating status', 'error', 'compactMessage');
+  }
 }
 
-function loadSettings() {
-  chrome.storage.local.get([SCOUT_NAME_KEY, API_URL_KEY, MESSAGE_TEMPLATE_KEY], (result) => {
-    const scoutNameInput = document.getElementById('scout-name-input');
-    const apiUrlInput = document.getElementById('api-url-input');
-    const messageTemplateInput = document.getElementById('message-template-input');
-
-    if (scoutNameInput && result[SCOUT_NAME_KEY]) {
-      scoutNameInput.value = result[SCOUT_NAME_KEY];
+// Update status pills UI - set active pill
+function updateStatusPillsUI(activeStatus) {
+  const allPills = document.querySelectorAll('.status-pill');
+  allPills.forEach(pill => {
+    const pillStatus = pill.getAttribute('data-status');
+    if (pillStatus === activeStatus) {
+      pill.classList.add('active');
+    } else {
+      pill.classList.remove('active');
     }
+  });
 
-    if (apiUrlInput && result[API_URL_KEY]) {
-      apiUrlInput.value = result[API_URL_KEY];
-    }
-
-    if (messageTemplateInput) {
-      messageTemplateInput.value = result[MESSAGE_TEMPLATE_KEY] || DEFAULT_MESSAGE;
+  // Also update action buttons to match active status
+  const allButtons = document.querySelectorAll('.action-status-btn');
+  allButtons.forEach(btn => {
+    const btnStatus = btn.getAttribute('data-status');
+    if (btnStatus === activeStatus) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
     }
   });
 }
 
-function saveSettings() {
-  const scoutName = document.getElementById('scout-name-input').value.trim();
-  const apiUrl = document.getElementById('api-url-input').value.trim();
-  const messageTemplate = document.getElementById('message-template-input').value.trim();
-  const messageDiv = document.getElementById('settings-message');
+// Update status widget display based on current status
+function updateStatusWidgetDisplay(status) {
+  const statusLabelMap = {
+    'saved': '✓ Saved',
+    'locked_in': '🔒 Locked In',
+    'hold': '⏸ Hold',
+    'not_saved': '✗ Not Saved'
+  };
 
-  if (!scoutName) {
-    messageDiv.textContent = '❌ Please enter your scout name';
-    messageDiv.style.color = '#dc2626';
-    return;
+  const label = statusLabelMap[status] || 'Unknown';
+
+  const compactWidget = document.getElementById('compactStatusWidget');
+  const dashboardWidget = document.getElementById('statusWidget');
+
+  if (compactWidget) {
+    document.getElementById('compactStatusLabel').textContent = label;
+  }
+  if (dashboardWidget) {
+    document.getElementById('statusLabel').textContent = label;
+  }
+}
+
+// Set status widget with color coding (works in both compact and dashboard views)
+function setStatusWidget(status, label) {
+  const statusIconMap = {
+    'saved': '✓',
+    'locked_in': '🔒',
+    'hold': '⏸',
+    'not_saved': '✗',
+    'new': '●',
+    'error': '●',
+    'setup': '●'
+  };
+
+  const statusClassMap = {
+    'saved': 'status-saved',
+    'locked_in': 'status-locked-in',
+    'hold': 'status-hold',
+    'not_saved': 'status-not-saved',
+    'new': 'status-new',
+    'error': 'status-error',
+    'setup': 'status-new'
+  };
+
+  // Update dashboard widget (if visible)
+  const widget = document.getElementById('statusWidget');
+  if (widget && !document.getElementById('dashboardView').classList.contains('hidden')) {
+    if (status === 'unsupported') {
+      widget.style.display = 'none';
+    } else {
+      widget.style.display = 'flex';
+      widget.className = 'status-widget';
+      document.getElementById('statusLabel').textContent = label;
+      document.getElementById('statusIcon').textContent = statusIconMap[status] || '●';
+      widget.classList.add(statusClassMap[status] || 'status-new');
+
+      // Show selector pills if creator is scouted (not new)
+      const dashboardSelector = document.getElementById('dashboardStatusSelector');
+      if (dashboardSelector) {
+        dashboardSelector.style.display = status !== 'new' ? 'block' : 'none';
+        if (status !== 'new') {
+          updateStatusPillsUI(status);
+          // Re-attach event listeners after showing pills
+          setTimeout(() => setupStatusPillListeners(), 50);
+        }
+      }
+    }
   }
 
-  if (!apiUrl) {
-    messageDiv.textContent = '❌ Please enter Google Apps Script URL';
-    messageDiv.style.color = '#dc2626';
-    return;
+  // Update compact widget (if visible)
+  const compactWidget = document.getElementById('compactStatusWidget');
+  if (compactWidget && !document.getElementById('compactView').classList.contains('hidden')) {
+    if (status === 'unsupported') {
+      compactWidget.style.display = 'none';
+    } else {
+      compactWidget.style.display = 'flex';
+      compactWidget.className = 'status-widget';
+      document.getElementById('compactStatusLabel').textContent = label;
+      document.getElementById('compactStatusIcon').textContent = statusIconMap[status] || '●';
+      compactWidget.classList.add(statusClassMap[status] || 'status-new');
+
+      // Show selector pills if creator is scouted (not new)
+      const compactSelector = document.getElementById('compactStatusSelector');
+      if (compactSelector) {
+        compactSelector.style.display = status !== 'new' ? 'block' : 'none';
+        if (status !== 'new') {
+          updateStatusPillsUI(status);
+          // Re-attach event listeners after showing pills
+          setTimeout(() => setupStatusPillListeners(), 50);
+        }
+      }
+
+      // Show action buttons if creator is scouted (not new)
+      const compactActionButtons = document.getElementById('compactActionButtons');
+      if (compactActionButtons) {
+        compactActionButtons.style.display = status !== 'new' ? 'flex' : 'none';
+        if (status !== 'new') {
+          updateStatusPillsUI(status);
+          // Re-attach event listeners after showing buttons
+          setTimeout(() => setupActionButtonListeners(), 50);
+        }
+      }
+    }
   }
+}
 
-  if (!apiUrl.includes('script.google.com')) {
-    messageDiv.textContent = '❌ Invalid Google Apps Script URL';
-    messageDiv.style.color = '#dc2626';
-    return;
-  }
+// Show message
+function showMessage(text, type, elementId) {
+  const message = document.getElementById(elementId);
+  if (!message) return;
 
-  if (!messageTemplate) {
-    messageDiv.textContent = '❌ Please enter a message template';
-    messageDiv.style.color = '#dc2626';
-    return;
-  }
+  message.textContent = text;
+  message.className = `message show ${type}`;
 
-  messageDiv.textContent = '⏳ Saving settings...';
-  messageDiv.style.color = '#6b7280';
-
-  chrome.storage.local.set({
-    [SCOUT_NAME_KEY]: scoutName,
-    [API_URL_KEY]: apiUrl,
-    [MESSAGE_TEMPLATE_KEY]: messageTemplate
-  }, () => {
-    messageDiv.textContent = '✅ Settings saved!';
-    messageDiv.style.color = '#059669';
+  if (type !== 'error') {
     setTimeout(() => {
-      closeSettingsModal();
-      messageDiv.textContent = '';
-      // Re-check setup status after settings saved
-      checkSetupStatus();
-    }, 1000);
-  });
+      message.className = 'message';
+    }, 5000);
+  }
 }
-
-// Attach event listeners
-function attachEventListeners() {
-  document.getElementById('setup-btn')?.addEventListener('click', handleSetupClick);
-  document.getElementById('login-btn')?.addEventListener('click', handleLogin);
-  document.getElementById('logout-btn')?.addEventListener('click', handleLogout);
-
-  // Allow Enter key to login
-  document.getElementById('login-email-input')?.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') handleLogin();
-  });
-
-  document.getElementById('open-dashboard')?.addEventListener('click', () => {
-    alert('Open your Google Sheet directly to view all creators. The URL is configured in your Apps Script backend.');
-  });
-
-  document.getElementById('settings')?.addEventListener('click', showSettingsModal);
-
-  document.getElementById('close-settings-btn')?.addEventListener('click', closeSettingsModal);
-
-  document.getElementById('save-settings-btn')?.addEventListener('click', saveSettings);
-
-  // Close modal when clicking outside it
-  document.getElementById('settings-modal')?.addEventListener('click', (e) => {
-    if (e.target.id === 'settings-modal') {
-      closeSettingsModal();
-    }
-  });
-}
-
-// Initialize when popup loads
-init();
