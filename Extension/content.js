@@ -1192,6 +1192,13 @@ async function handleSaveCreator(status = 'saved') {
       currentCreatorData.status = status;
     }
 
+    // PERSIST STATUS to localStorage so it survives verification failures and page reloads
+    // Key: scout_status_{profile_url}
+    const profileUrl = currentCreatorData?.profile_url;
+    if (profileUrl) {
+      localStorage.setItem(`scout_status_${profileUrl}`, status);
+    }
+
     // 6. Update cache immediately (before GAS sync)
     // Store both status and found flag to prevent stale cache flashing
     if (currentCreatorData && currentCreatorData.profile_url) {
@@ -1247,6 +1254,10 @@ async function handleSaveCreator(status = 'saved') {
               currentStatus = previousStatus;
               window.__scoutWidgetStatus = previousStatus;
               updateButtonStatus(previousStatus);
+              // CRITICAL: Clear the persistent status so next attempt starts fresh
+              if (currentCreatorData?.profile_url) {
+                localStorage.removeItem(`scout_status_${currentCreatorData.profile_url}`);
+              }
               const errorMsg = verifyResult.error ? `Error: ${verifyResult.error}` : 'Error: Creator could not be saved to sheet';
               showSaveMessage(errorMsg, 'error');
               return;
@@ -1734,23 +1745,31 @@ function checkAndShowWidget() {
       const cachedPrices = result.CREATOR_LOCK_IN_PRICE_CACHE || {};
       const profileKey = creatorData.profile_url;
 
-      // FIX: Only show cached status if it's marked as valid (found=true)
-      // This prevents showing stale status for deleted creators
-      const cachedEntry = cachedStatus[profileKey];
-      if (cachedEntry) {
-        // Handle both old format (string) and new format (object with found flag)
-        const isCacheValid = typeof cachedEntry === 'string'
-          ? true // Old format - assume valid
-          : cachedEntry.found !== false; // New format - check found flag
+      // FIRST: Check localStorage for persistent status (survives verification failures)
+      const persistedStatus = localStorage.getItem(`scout_status_${profileKey}`);
+      if (persistedStatus) {
+        hasCachedData = true;
+        window.__scoutWidgetStatus = persistedStatus;
+        currentStatus = persistedStatus;
+        updateButtonStatus(window.__scoutWidgetStatus);
+      } else {
+        // FALLBACK: Check chrome.storage cache
+        const cachedEntry = cachedStatus[profileKey];
+        if (cachedEntry) {
+          // Handle both old format (string) and new format (object with found flag)
+          const isCacheValid = typeof cachedEntry === 'string'
+            ? true // Old format - assume valid
+            : cachedEntry.found !== false; // New format - check found flag
 
-        if (isCacheValid) {
-          hasCachedData = true;
-          const statusValue = typeof cachedEntry === 'string'
-            ? cachedEntry
-            : cachedEntry.status;
-          window.__scoutWidgetStatus = statusValue;
-          currentStatus = statusValue;
-          updateButtonStatus(window.__scoutWidgetStatus);
+          if (isCacheValid) {
+            hasCachedData = true;
+            const statusValue = typeof cachedEntry === 'string'
+              ? cachedEntry
+              : cachedEntry.status;
+            window.__scoutWidgetStatus = statusValue;
+            currentStatus = statusValue;
+            updateButtonStatus(window.__scoutWidgetStatus);
+          }
         }
       }
 
