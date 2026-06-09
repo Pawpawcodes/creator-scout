@@ -300,36 +300,48 @@ function handleGetCreatorStatus(email, profile_url) {
       return { error: 'Scout not found', status: null };
     }
 
-    // CRITICAL: Always fetch fresh from sheet - NO cache for status restoration
-    // Correctness is more important than cache hits
-    // Cache invalidation is unreliable, so we disable caching entirely for this operation
-    const rowNumber = getCreatorRowNumber(scoutId, profile_url);
+    // CRITICAL: ALWAYS read fresh from sheet for status restoration
+    // Do NOT use cached row numbers - they become invalid when rows are deleted
+    // Correctness > Performance: Always do a fresh lookup
+    const { masterSheet } = ensureMasterSheets();
+    const lastRow = masterSheet.getLastRow();
 
-    if (!rowNumber) {
+    if (lastRow <= 1) {
+      // No data rows
+      return { status: null, found: false, lock_in_price: null };
+    }
+
+    // Fresh lookup: Read only columns A-B to find the current row
+    const range = masterSheet.getRange(2, 1, lastRow - 1, 2);
+    const data = range.getValues();
+
+    // Find the LATEST matching row (in case of duplicates)
+    let foundRowNumber = null;
+    for (let i = 0; i < data.length; i++) {
+      if (data[i][0] === scoutId && data[i][1] === profile_url) {
+        foundRowNumber = i + 2; // Row numbers start at 1, data starts at row 2
+      }
+    }
+
+    if (!foundRowNumber) {
       // Creator not found in sheet
       return { status: null, found: false, lock_in_price: null };
     }
 
-    // Get row data directly from sheet (always fresh, never cached)
-    const { masterSheet } = ensureMasterSheets();
-    const row = masterSheet.getRange(rowNumber, 1, 1, 8).getValues()[0];
+    // Read the full row to get status and lock-in price
+    const row = masterSheet.getRange(foundRowNumber, 1, 1, 8).getValues()[0];
 
-    // CRITICAL FIX: Validate that cached row number still points to the correct creator
-    // If rows were deleted, row numbers shift and cache becomes invalid
+    // Double-check the row matches (defensive check)
     const rowScoutId = row[0];
     const rowProfileUrl = row[1];
 
     if (rowScoutId !== scoutId || rowProfileUrl !== profile_url) {
-      // Cached row number is INVALID - points to wrong creator
-      // Clear the cache and force fresh lookup
-      const cache = CacheService.getScriptCache();
-      cache.remove(`creator_row_${scoutId}_${profile_url}`);
+      // Row data doesn't match - something is wrong
       return { status: null, found: false, lock_in_price: null };
     }
 
-    // Row is valid - extract status
+    // Extract status from column E (index 4)
     // CRITICAL: Do NOT default to 'saved' - that masks deleted records
-    // If status column is empty, return null (let extension handle the default)
     const statusValue = row[4];
     const creatorStatus = statusValue ? statusValue.toString() : null;
     const lockInPrice = (row[7] || null);
