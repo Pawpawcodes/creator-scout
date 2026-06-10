@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Creator Scout</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Onboarding Screen (Initial Setup) -->
+    <div id="onboardingView" class="onboarding-view">
+      <div class="onboarding-glass">
+        <h1 class="onboarding-title">🔍 Creator Scout</h1>
+
+        <div id="onboardingMessage" class="message"></div>
+
+        <form id="onboardingForm" class="onboarding-form">
+          <div class="form-group">
+            <div class="input-wrapper">
+              <span class="input-icon">✉️</span>
+              <input
+                type="email"
+                id="scoutEmail"
+                placeholder="your.email@company.com"
+                required
+              >
+            </div>
+          </div>
+
+          <button type="submit" class="btn-continue-compact">Continue →</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Collapsed View (shown by default after setup - ultra minimal) -->
+    <div id="collapsedView" class="collapsed-view hidden">
+      <div class="collapsed-glass">
+        <div class="collapsed-header">
+          <div class="collapsed-status">
+            <span class="collapsed-icon">✓</span>
+            <span class="collapsed-text" id="collapsedStatusText">Logged In</span>
+          </div>
+          <div class="collapsed-controls">
+            <button id="collapsedSettings" class="collapsed-btn settings-icon" title="Settings">⚙️</button>
+            <button id="collapsedExpand" class="collapsed-btn expand-icon" title="Expand">▼</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Compact View (shown after setup, minimal UI) -->
+    <div id="compactView" class="compact-view hidden">
+      <div class="compact-glass">
+        <div class="compact-header">
+          <span class="compact-logo">🔍</span>
+          <button id="compactSettings" class="settings-btn">⚙️</button>
+        </div>
+
+        <div id="compactMessage" class="message"></div>
+
+        <div id="compactStatusWidget" class="status-widget" style="display: none;">
+          <div class="status-icon" id="compactStatusIcon">●</div>
+          <div class="status-content">
+            <div class="status-label" id="compactStatusLabel">Loading...</div>
+            <div class="status-sublabel" id="compactStatusSublabel"></div>
+          </div>
+        </div>
+
+        <div id="compactActionButtons" class="action-buttons-row" style="display: none;">
+          <button type="button" class="action-btn action-status-btn" data-status="reachedout" title="Mark as Reached Out">📞 Reached</button>
+          <button type="button" class="action-btn action-status-btn" data-status="negotiating" title="Mark as Negotiating">💬 Negotiating</button>
+          <button type="button" class="action-btn action-status-btn" data-status="lockedin" title="Mark as Locked In">🔒 Locked</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dashboard View (shown after setup, full UI) - now hidden by default -->
+    <div id="dashboardView" class="dashboard-view hidden">
+      <div class="dashboard-glass">
+        <div class="dashboard-header">
+          <div>
+            <h1 class="dashboard-logo">🔍 Creator Scout</h1>
+            <p class="logged-in-email" id="loggedInEmail"></p>
+          </div>
+          <button id="settingsToggle" class="settings-btn">⚙️</button>
+        </div>
+
+        <div id="dashboardMessage" class="message"></div>
+
+        <div id="statusWidget" class="status-widget" style="display: none;">
+          <div class="status-icon" id="statusIcon">●</div>
+          <div class="status-content">
+            <div class="status-label" id="statusLabel">Loading...</div>
+            <div class="status-sublabel" id="statusSublabel"></div>
+            <div class="status-selector-container" id="dashboardStatusSelector" style="display: none; margin-top: 8px;">
+              <div class="status-selector-pills">
+                <button type="button" class="status-pill" data-status="saved" title="Shortlisted">Shortlisted</button>
+                <button type="button" class="status-pill" data-status="reachedout" title="Reached Out">Reached Out</button>
+                <button type="button" class="status-pill" data-status="negotiating" title="Negotiating">Negotiating</button>
+                <button type="button" class="status-pill" data-status="lockedin" title="Locked In">Locked In</button>
+                <button type="button" class="status-pill" data-status="cancelled" title="Cancelled">Cancelled</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Modal (overlay) -->
+    <div id="settingsModal" class="settings-modal hidden">
+      <div class="settings-glass">
+        <div class="settings-compact-header">
+          <h2 class="settings-title">Creator Scout</h2>
+          <button type="button" class="settings-close-btn" id="settingsCloseBtn" title="Close">✕</button>
+        </div>
+
+        <div id="settingsMessage" class="message"></div>
+
+        <form id="settingsForm" class="settings-form">
+          <!-- Email & Workspace (compact 2-row) -->
+          <div class="settings-workspace-compact">
+            <div class="settings-row-compact">
+              <span class="settings-row-value-compact" id="settingsEmailDisplay"></span>
+            </div>
+            <div class="settings-row-compact">
+              <span class="settings-status-indicator">● Workspace Connected</span>
+            </div>
+          </div>
+
+          <!-- DM Templates (Primary Focus) -->
+          <div class="settings-templates-primary">
+            <div class="settings-templates-header">
+              <span class="settings-templates-title">DM Templates</span>
+              <button type="button" class="settings-templates-edit" id="editTemplatesBtn" title="Edit">✏️</button>
+            </div>
+
+            <div class="settings-template-pills">
+              <button type="button" class="settings-template-pill active" data-template="template1" id="templateBtn1">
+                <span class="template-label">1</span>
+              </button>
+              <button type="button" class="settings-template-pill" data-template="template2" id="templateBtn2">
+                <span class="template-label">2</span>
+              </button>
+              <button type="button" class="settings-template-pill" data-template="template3" id="templateBtn3">
+                <span class="template-label">3</span>
+              </button>
+            </div>
+
+            <div class="settings-preview-compact">
+              <div class="settings-preview-content-compact" id="autoDmTemplatePreview">Hi {{creator_name}}, I'd love to collaborate...</div>
+            </div>
+
+            <input type="hidden" id="autoDmTemplate" />
+          </div>
+
+          <button type="submit" class="btn-save-pill">Save</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Edit Templates Modal (overlay) -->
+    <div id="editTemplatesModal" class="edit-templates-modal hidden">
+      <div class="edit-templates-glass">
+        <div class="edit-templates-header">
+          <h2>Edit Template Names</h2>
+          <button type="button" class="close-btn" id="closeEditModal" title="Close">✕</button>
+        </div>
+
+        <form id="editTemplatesForm" class="edit-templates-form">
+          <div class="edit-template-item">
+            <label for="editTemplateName1">Template 1 Name</label>
+            <input
+              type="text"
+              id="editTemplateName1"
+              placeholder="e.g., Casual, Professional, Direct"
+              maxlength="30"
+            >
+          </div>
+
+          <div class="edit-template-item">
+            <label for="editTemplateName2">Template 2 Name</label>
+            <input
+              type="text"
+              id="editTemplateName2"
+              placeholder="e.g., Casual, Professional, Direct"
+              maxlength="30"
+            >
+          </div>
+
+          <div class="edit-template-item">
+            <label for="editTemplateName3">Template 3 Name</label>
+            <input
+              type="text"
+              id="editTemplateName3"
+              placeholder="e.g., Casual, Professional, Direct"
+              maxlength="30"
+            >
+          </div>
+
+          <button type="submit" class="btn-primary btn-large">Save Names</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
