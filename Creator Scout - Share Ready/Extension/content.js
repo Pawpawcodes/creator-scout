@@ -531,7 +531,6 @@ const WIDGET_STYLES = `
     .scout-notes-section {
       margin-top: 6px;
       padding-top: 6px;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
     }
 
     .scout-notes-box {
@@ -1586,7 +1585,7 @@ async function renderCompactNotes() {
   const section = document.createElement('div');
   section.className = 'scout-notes-section';
   section.innerHTML = `
-    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+    <div style="margin-top: 8px; padding-top: 8px;">
       <label style="font-size: 9px; font-weight: 600; color: rgba(255, 255, 255, 0.75); display: block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.3px;">Notes</label>
       <div style="display: flex; gap: 6px; align-items: center;">
         <input type="text" class="scout-notes-input" placeholder="Add note..." value="${notesToDisplay}" style="flex: 1; padding: 6px 8px; border: 1px solid rgba(124, 58, 237, 0.25); border-radius: 8px; font-size: 9px; background: rgba(255, 255, 255, 0.08); color: #ffffff; font-family: inherit;" autocomplete="off">
@@ -1670,7 +1669,7 @@ function showLockInNoteDisplay(note) {
   const section = document.createElement('div');
   section.className = 'scout-notes-section';
   section.innerHTML = `
-    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+    <div style="margin-top: 8px; padding-top: 8px;">
       <label style="font-size: 9px; font-weight: 600; color: rgba(255, 255, 255, 0.75); display: block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.3px;">Notes</label>
       <div style="margin-top: 6px; padding: 5px 8px; background: rgba(34, 197, 94, 0.15); border-radius: 10px; border: 1px solid rgba(34, 197, 94, 0.3); display: flex; align-items: center; gap: 5px;">
         <div style="font-size: 9px; font-weight: 600; color: #4ade80; margin: 0; flex: 1;">✓ ${note}</div>
