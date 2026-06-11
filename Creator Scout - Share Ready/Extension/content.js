@@ -62,6 +62,28 @@ const WIDGET_STYLES = `
       text-align: center;
     }
 
+    .scout-status-text {
+      font-size: 9px;
+      font-weight: 600;
+      text-align: center;
+      padding: 2px 0;
+      margin-top: 2px;
+      margin-bottom: 2px;
+      animation: scoutFadeIn 0.3s ease-out;
+    }
+
+    .scout-status-text.status-success {
+      color: #4ade80;
+    }
+
+    .scout-status-text.status-error {
+      color: #f87171;
+    }
+
+    .scout-status-text.fade-out {
+      animation: scoutFadeOut 0.3s ease-out forwards;
+    }
+
     .scout-save-message.scout-save-message-success {
       background: rgba(34, 197, 94, 0.15);
       color: #4ade80;
@@ -1924,7 +1946,7 @@ async function handleSaveCreator(status = 'saved') {
       });
     }
 
-    showSaveMessage(`Creator ${getStatusMessage(status)}!`, 'success');
+    showCompactStatusText(`✓ ${getStatusMessage(status)}`, 'success');
 
     // Show lock-in price section immediately if locked
     if (status === 'lockedin') {
@@ -1943,7 +1965,7 @@ async function handleSaveCreator(status = 'saved') {
       })
       .catch(error => {
         console.error(`Error ${actionType} creator:`, error);
-        showSaveMessage(`Error ${actionType} status: ${error.message}`, 'error');
+        showCompactStatusText(`✗ Error: ${error.message}`, 'error');
 
         // Revert optimistic update on GAS error
         const lastStatus = currentStatus || 'new';
@@ -1951,7 +1973,7 @@ async function handleSaveCreator(status = 'saved') {
       });
   } catch (error) {
     console.error(`Error ${actionType} creator:`, error);
-    showSaveMessage(`Error ${actionType} status: ${error.message}`, 'error');
+    showCompactStatusText(`✗ Error: ${error.message}`, 'error');
 
     // PERFORMANCE: Revert optimistic update on error
     const lastStatus = currentStatus || 'new';
@@ -2278,6 +2300,33 @@ function showSaveMessage(text, type) {
       messageEl.classList.add('fade-out');
       setTimeout(() => messageEl.remove(), 300);
     }, 3000);
+  }
+}
+
+function showCompactStatusText(text, type) {
+  const popup = document.getElementById('scout-widget-popup');
+  if (!popup) return;
+
+  const buttonsContainer = popup.querySelector('#scout-workflow-buttons');
+  if (!buttonsContainer) return;
+
+  // Remove any existing status text
+  const existingStatus = buttonsContainer.parentElement.querySelector('.scout-status-text');
+  if (existingStatus) {
+    existingStatus.remove();
+  }
+
+  const statusEl = document.createElement('div');
+  statusEl.className = `scout-status-text status-${type}`;
+  statusEl.textContent = text;
+
+  buttonsContainer.parentElement.insertBefore(statusEl, buttonsContainer.nextSibling);
+
+  if (type === 'success') {
+    setTimeout(() => {
+      statusEl.classList.add('fade-out');
+      setTimeout(() => statusEl.remove(), 300);
+    }, 2500);
   }
 }
 
