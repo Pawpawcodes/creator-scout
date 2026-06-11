@@ -1532,7 +1532,7 @@ function showWidgetPopup(status, message) {
   }
 }
 
-// Render compact notes section (matching price UI style)
+// Render inline notes section (original UI from video)
 async function renderCompactNotes() {
   const popup = document.getElementById('scout-widget-popup');
   if (!popup || !currentCreatorData || !currentCreatorData.profile_url) {
@@ -1553,81 +1553,32 @@ async function renderCompactNotes() {
   }
 
   // Remove any existing notes section
-  const existingNotes = popup.querySelector('.scout-notes-compact-section');
+  const existingNotes = popup.querySelector('.scout-notes-section');
   if (existingNotes) existingNotes.remove();
 
   const section = document.createElement('div');
-  section.className = 'scout-notes-compact-section';
-
-  if (notesToDisplay.trim()) {
-    // Display mode: show note with edit button
-    section.innerHTML = `
-      <div style="margin-top: 6px; padding: 5px 8px; background: rgba(124, 58, 237, 0.1); border-radius: 10px; border: 1px solid rgba(124, 58, 237, 0.2); display: flex; align-items: center; gap: 5px;">
-        <div style="font-size: 9px; color: rgba(255,255,255,0.8); margin: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">📝 ${notesToDisplay.substring(0, 50)}</div>
-        <button class="scout-notes-edit-btn" style="font-size: 9px; color: #a78bfa; background: none; border: none; cursor: pointer; padding: 0; margin: 0; flex-shrink: 0;" title="Edit">✏️</button>
-      </div>
-    `;
-    popup.appendChild(section);
-
-    const editBtn = section.querySelector('.scout-notes-edit-btn');
-    editBtn.addEventListener('click', () => {
-      section.remove();
-      showNotesInput(notesToDisplay);
-    });
-  } else {
-    // Add mode: show "Add Note" with save button
-    section.innerHTML = `
-      <div style="display: flex; gap: 4px; align-items: center; margin-top: 6px;">
-        <input type="text" class="scout-notes-compact-input" placeholder="📝 Add Note..." value="" style="flex: 1; padding: 4px 6px; border: 1px solid rgba(124, 58, 237, 0.25); border-radius: 8px; font-size: 9px; background: rgba(255,255,255,0.08); color: #ffffff;" autocomplete="off">
-        <button class="scout-notes-save-btn" style="padding: 4px 8px; background: #a78bfa; color: white; border: none; border-radius: 14px; font-size: 8px; font-weight: 700; cursor: pointer; flex-shrink: 0;">✓</button>
-      </div>
-    `;
-    popup.appendChild(section);
-
-    const input = section.querySelector('.scout-notes-compact-input');
-    const saveBtn = section.querySelector('.scout-notes-save-btn');
-
-    input.focus();
-    input.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') saveBtn.click();
-    });
-
-    saveBtn.addEventListener('click', async () => {
-      const note = input.value.trim();
-      await saveNote(note);
-      section.remove();
-      renderCompactNotes();
-    });
-  }
-}
-
-// Show notes edit input
-async function showNotesInput(currentNote) {
-  const popup = document.getElementById('scout-widget-popup');
-  if (!popup) return;
-
-  const section = document.createElement('div');
-  section.className = 'scout-notes-compact-section';
+  section.className = 'scout-notes-section';
   section.innerHTML = `
-    <div style="display: flex; gap: 4px; align-items: flex-start; margin-top: 6px;">
-      <textarea class="scout-notes-compact-input" placeholder="📝 Edit Note..." style="flex: 1; padding: 4px 6px; border: 1px solid rgba(124, 58, 237, 0.25); border-radius: 8px; font-size: 9px; background: rgba(255,255,255,0.08); color: #ffffff; resize: none; max-height: 80px; overflow-y: auto; font-family: inherit;">${currentNote}</textarea>
-      <button class="scout-notes-save-btn" style="padding: 4px 8px; background: #a78bfa; color: white; border: none; border-radius: 14px; font-size: 8px; font-weight: 700; cursor: pointer; flex-shrink: 0;">✓</button>
+    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+      <label style="font-size: 9px; font-weight: 600; color: rgba(255, 255, 255, 0.75); display: block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.3px;">Notes</label>
+      <div style="display: flex; gap: 6px; align-items: center;">
+        <input type="text" class="scout-notes-input" placeholder="Add note..." value="${notesToDisplay}" style="flex: 1; padding: 6px 8px; border: 1px solid rgba(124, 58, 237, 0.25); border-radius: 8px; font-size: 9px; background: rgba(255, 255, 255, 0.08); color: #ffffff; font-family: inherit;" autocomplete="off">
+        <button class="scout-notes-save-btn" style="padding: 6px 10px; background: #22c55e; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px;">✓</button>
+      </div>
     </div>
   `;
   popup.appendChild(section);
 
-  const textarea = section.querySelector('.scout-notes-compact-input');
+  const input = section.querySelector('.scout-notes-input');
   const saveBtn = section.querySelector('.scout-notes-save-btn');
 
-  textarea.focus();
-  textarea.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter' && e.ctrlKey) saveBtn.click();
+  input.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') saveBtn.click();
   });
 
   saveBtn.addEventListener('click', async () => {
-    const note = textarea.value.trim();
+    const note = input.value.trim();
     await saveNote(note);
-    section.remove();
     renderCompactNotes();
   });
 }
