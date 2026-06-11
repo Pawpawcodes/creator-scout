@@ -670,7 +670,7 @@ function handleUpdateNotes(email, profile_url, notes, personalSheetId) {
     masterSheet.getRange(foundRow, 9).setValue(notes);
     console.log(`[UPDATE NOTES] Master sheet updated successfully`);
 
-    // Update personal sheet if provided
+    // Update personal sheet if provided (EXACTLY like Price does)
     if (personalSheetId) {
       try {
         const personalSheet = SpreadsheetApp.openById(personalSheetId);
@@ -679,8 +679,8 @@ function handleUpdateNotes(email, profile_url, notes, personalSheetId) {
         if (personalMasterSheet) {
           const personalData = personalMasterSheet.getDataRange().getValues();
           for (let i = 1; i < personalData.length; i++) {
-            const personalUrl = normalizeProfileUrl(personalData[i][1]);
-            if (personalUrl === normalizedUrl) {
+            // Use column 1 lookup (same as Price) - Personal Sheet has different structure than Master
+            if (personalData[i][0] === profile_url) {
               // Update Notes column (column 9, index 8) in personal sheet
               personalMasterSheet.getRange(i + 1, 9).setValue(notes);
               break;

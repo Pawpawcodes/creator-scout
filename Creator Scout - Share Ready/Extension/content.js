@@ -1594,8 +1594,12 @@ async function handleNoteSave(noteText) {
       throw new Error('Creator data not loaded');
     }
 
-    // PERFORMANCE: Optimistic UI update - show note immediately
-    renderCompactNotes();
+    // PERFORMANCE: Optimistic UI update - show saved state immediately (like Price)
+    const section = document.querySelector('.scout-notes-section');
+    if (section) {
+      section.remove();
+    }
+    showLockInNoteDisplay(noteText);
     showSaveMessage('✓ Note saved', 'success');
 
     const stored = await new Promise(resolve => {
@@ -1634,6 +1638,32 @@ async function handleNoteSave(noteText) {
     console.error('Error saving note:', error);
     showSaveMessage('Error saving note: ' + error.message, 'error');
   }
+}
+
+// Show note in saved state (EXACTLY like Price display)
+function showLockInNoteDisplay(note) {
+  const popup = document.getElementById('scout-widget-popup');
+  if (!popup) return;
+
+  const section = document.createElement('div');
+  section.className = 'scout-notes-section';
+  section.innerHTML = `
+    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+      <label style="font-size: 9px; font-weight: 600; color: rgba(255, 255, 255, 0.75); display: block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.3px;">Notes</label>
+      <div style="margin-top: 6px; padding: 5px 8px; background: rgba(34, 197, 94, 0.15); border-radius: 10px; border: 1px solid rgba(34, 197, 94, 0.3); display: flex; align-items: center; gap: 5px;">
+        <div style="font-size: 9px; font-weight: 600; color: #4ade80; margin: 0; flex: 1;">✓ ${note}</div>
+        <button class="scout-notes-edit-btn" style="font-size: 9px; color: #a78bfa; background: none; border: none; cursor: pointer; padding: 0; margin: 0; flex-shrink: 0;" title="Edit">✏️</button>
+      </div>
+    </div>
+  `;
+
+  popup.appendChild(section);
+
+  const editBtn = section.querySelector('.scout-notes-edit-btn');
+  editBtn.addEventListener('click', () => {
+    section.remove();
+    renderCompactNotes();
+  });
 }
 
 // Get button label text
