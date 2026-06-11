@@ -1563,7 +1563,7 @@ async function renderCompactNotes() {
       <label style="font-size: 9px; font-weight: 600; color: rgba(255, 255, 255, 0.75); display: block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.3px;">Notes</label>
       <div style="display: flex; gap: 6px; align-items: center;">
         <input type="text" class="scout-notes-input" placeholder="Add note..." value="${notesToDisplay}" style="flex: 1; padding: 6px 8px; border: 1px solid rgba(124, 58, 237, 0.25); border-radius: 8px; font-size: 9px; background: rgba(255, 255, 255, 0.08); color: #ffffff; font-family: inherit;" autocomplete="off">
-        <button class="scout-notes-save-btn" style="padding: 6px 10px; background: #22c55e; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px;">✓</button>
+        <button class="scout-notes-save-btn" style="padding: 4px 8px; background: #22c55e; color: white; border: none; border-radius: 14px; font-size: 8px; font-weight: 700; cursor: pointer; flex-shrink: 0;">✓</button>
       </div>
     </div>
   `;
@@ -1578,6 +1578,9 @@ async function renderCompactNotes() {
 
   saveBtn.addEventListener('click', async () => {
     const note = input.value.trim();
+    if (!cachedSettings.SCOUT_EMAIL) {
+      await updateCacheFromStorage();
+    }
     await saveNote(note);
     renderCompactNotes();
   });
