@@ -250,8 +250,8 @@ const WIDGET_STYLES = `
       -webkit-backdrop-filter: blur(14px);
       border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 16px;
-      padding: 4px 8px;
-      max-width: 260px;
+      padding: 3px 6px;
+      max-width: 220px;
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
       animation: popupFadeScale 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
       transform-origin: top right;
@@ -293,7 +293,7 @@ const WIDGET_STYLES = `
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 2px;
+      margin-bottom: 1px;
     }
 
     .scout-popup-title {
@@ -325,12 +325,12 @@ const WIDGET_STYLES = `
     .scout-status-badge {
       display: flex;
       align-items: center;
-      gap: 5px;
-      padding: 5px 9px;
+      gap: 4px;
+      padding: 3px 6px;
       border-radius: 6px;
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 600;
-      margin-bottom: 2px;
+      margin-bottom: 1px;
       letter-spacing: 0.3px;
     }
 
@@ -365,10 +365,10 @@ const WIDGET_STYLES = `
     .scout-popup-actions {
       display: flex;
       flex-direction: row;
-      gap: 4px;
-      margin-bottom: 2px;
+      gap: 3px;
+      margin-bottom: 1px;
       align-items: center;
-      margin-top: 2px;
+      margin-top: 1px;
       justify-content: center;
     }
 
@@ -383,7 +383,7 @@ const WIDGET_STYLES = `
     }
 
     .scout-action-btn {
-      padding: 4px 10px;
+      padding: 2px 8px;
       background: rgba(124, 58, 237, 0.2);
       color: rgba(255, 255, 255, 0.9);
       border: 1px solid rgba(124, 58, 237, 0.35);
@@ -462,12 +462,12 @@ const WIDGET_STYLES = `
       display: flex;
       gap: 4px;
       width: 100%;
-      margin-bottom: 2px;
+      margin-bottom: 1px;
     }
 
     .scout-workflow-btn {
       flex: 1;
-      padding: 3px 8px;
+      padding: 2px 6px;
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 16px;
       font-size: 9px;
@@ -479,7 +479,7 @@ const WIDGET_STYLES = `
       letter-spacing: 0.1px;
       background: rgba(255, 255, 255, 0.08);
       color: rgba(255, 255, 255, 0.8);
-      min-height: 24px;
+      min-height: 22px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -878,20 +878,20 @@ const WIDGET_STYLES = `
 
     .scout-template-switcher {
       display: flex;
-      gap: 2px;
+      gap: 1px;
       margin-bottom: 0;
       margin-top: 0;
     }
 
     .scout-template-btn {
-      width: 20px;
-      height: 20px;
+      width: 18px;
+      height: 18px;
       padding: 0;
       background: rgba(255, 255, 255, 0.08);
       color: rgba(196, 181, 253, 0.8);
       border: 1px solid rgba(124, 58, 237, 0.2);
-      border-radius: 10px;
-      font-size: 8px;
+      border-radius: 8px;
+      font-size: 7px;
       font-weight: 700;
       cursor: pointer;
       transition: all 0.2s ease;
@@ -1584,12 +1584,9 @@ async function renderCompactNotes() {
   const section = document.createElement('div');
   section.className = 'scout-notes-section';
   section.innerHTML = `
-    <div>
-      <label style="font-size: 9px; font-weight: 600; color: rgba(255, 255, 255, 0.75); display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.3px;">Notes</label>
-      <div style="display: flex; gap: 6px; align-items: center;">
-        <input type="text" class="scout-notes-input" placeholder="Add note..." value="${notesToDisplay}" style="flex: 1; padding: 6px 8px; border: 1px solid rgba(124, 58, 237, 0.25); border-radius: 8px; font-size: 9px; background: rgba(255, 255, 255, 0.08); color: #ffffff; font-family: inherit;" autocomplete="off">
-        <button class="scout-notes-save-btn" style="padding: 4px 8px; background: #22c55e; color: white; border: none; border-radius: 14px; font-size: 8px; font-weight: 700; cursor: pointer; flex-shrink: 0;">✓</button>
-      </div>
+    <div style="display: flex; gap: 4px; align-items: center;">
+      <input type="text" class="scout-notes-input" placeholder="Add note..." value="${notesToDisplay}" style="flex: 1; padding: 4px 6px; border: 1px solid rgba(124, 58, 237, 0.25); border-radius: 8px; font-size: 9px; background: rgba(255, 255, 255, 0.08); color: #ffffff; font-family: inherit;" autocomplete="off">
+      <button class="scout-notes-save-btn" style="padding: 2px 6px; background: #22c55e; color: white; border: none; border-radius: 12px; font-size: 8px; font-weight: 700; cursor: pointer; flex-shrink: 0;">✓</button>
     </div>
   `;
   popup.appendChild(section);
@@ -1668,12 +1665,9 @@ function showLockInNoteDisplay(note) {
   const section = document.createElement('div');
   section.className = 'scout-notes-section';
   section.innerHTML = `
-    <div>
-      <label style="font-size: 9px; font-weight: 600; color: rgba(255, 255, 255, 0.75); display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.3px;">Notes</label>
-      <div style="margin-top: 6px; padding: 5px 8px; background: rgba(34, 197, 94, 0.15); border-radius: 10px; border: 1px solid rgba(34, 197, 94, 0.3); display: flex; align-items: center; gap: 5px;">
-        <div style="font-size: 9px; font-weight: 600; color: #4ade80; margin: 0; flex: 1;">✓ ${note}</div>
-        <button class="scout-notes-edit-btn" style="font-size: 9px; color: #a78bfa; background: none; border: none; cursor: pointer; padding: 0; margin: 0; flex-shrink: 0;" title="Edit">✏️</button>
-      </div>
+    <div style="padding: 4px 6px; background: rgba(34, 197, 94, 0.15); border-radius: 10px; border: 1px solid rgba(34, 197, 94, 0.3); display: flex; align-items: center; gap: 4px;">
+      <div style="font-size: 9px; font-weight: 600; color: #4ade80; margin: 0; flex: 1;">✓ ${note}</div>
+      <button class="scout-notes-edit-btn" style="font-size: 9px; color: #a78bfa; background: none; border: none; cursor: pointer; padding: 0; margin: 0; flex-shrink: 0;" title="Edit">✏️</button>
     </div>
   `;
 
