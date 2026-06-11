@@ -879,8 +879,9 @@ const WIDGET_STYLES = `
     .scout-template-switcher {
       display: flex;
       gap: 1px;
-      margin-bottom: 0;
-      margin-top: 0;
+      margin-bottom: 1px;
+      margin-top: 1px;
+      justify-content: center;
     }
 
     .scout-template-btn {
@@ -1293,15 +1294,10 @@ function showWidgetPopup(status, message) {
       <div class="scout-workflow-buttons" id="scout-workflow-buttons">
         <!-- Dynamically populated based on current status -->
       </div>
-      <div class="scout-popup-actions">
-        <button class="scout-action-btn scout-dm-btn">
-          Copy
-        </button>
-        <div class="scout-template-switcher">
-          <button type="button" class="scout-template-btn ${activeTemplate === 'template1' ? 'active' : ''}" data-template="template1" title="Template 1"><span class="scout-template-label">1</span></button>
-          <button type="button" class="scout-template-btn ${activeTemplate === 'template2' ? 'active' : ''}" data-template="template2" title="Template 2"><span class="scout-template-label">2</span></button>
-          <button type="button" class="scout-template-btn ${activeTemplate === 'template3' ? 'active' : ''}" data-template="template3" title="Template 3"><span class="scout-template-label">3</span></button>
-        </div>
+      <div class="scout-template-switcher">
+        <button type="button" class="scout-template-btn ${activeTemplate === 'template1' ? 'active' : ''}" data-template="template1" title="Template 1"><span class="scout-template-label">1</span></button>
+        <button type="button" class="scout-template-btn ${activeTemplate === 'template2' ? 'active' : ''}" data-template="template2" title="Template 2"><span class="scout-template-label">2</span></button>
+        <button type="button" class="scout-template-btn ${activeTemplate === 'template3' ? 'active' : ''}" data-template="template3" title="Template 3"><span class="scout-template-label">3</span></button>
       </div>
     `;
 
@@ -1516,28 +1512,59 @@ function showWidgetPopup(status, message) {
     renderWorkflowButtons(status);
     renderCompactNotes();
 
-    popup.querySelector('.scout-dm-btn').addEventListener('click', async () => {
-      await handleSendDM();
-    });
-
     // Setup template switcher buttons
     popup.querySelectorAll('.scout-template-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const templateId = e.target.dataset.template;
+      btn.addEventListener('click', async (e) => {
+        const templateId = e.target.closest('.scout-template-btn').dataset.template;
 
-        // Update active state ONLY for this widget session (do NOT save to storage)
+        // Update active state
         popup.querySelectorAll('.scout-template-btn').forEach(b => {
           b.classList.remove('active');
         });
-        e.target.classList.add('active');
+        e.target.closest('.scout-template-btn').classList.add('active');
 
         // Update global active template for this session only
         window.__dmTemplates = window.__dmTemplates || {};
         window.__dmTemplates.activeTemplate = templateId;
-        // NOTE: Intentionally NOT saving to storage - only affects this widget session
 
-        // Just change template, don't auto-copy
-        // User will click "Copy Message" button to copy
+        // Load and copy template immediately
+        try {
+          const stored = await chrome.storage.local.get([
+            'autoDmTemplate1',
+            'autoDmTemplate2',
+            'autoDmTemplate3'
+          ]);
+
+          if (!currentCreatorData) {
+            throw new Error('Creator data not loaded');
+          }
+
+          let template = 'Hi {{creator_name}}! Hope you are doing well.\n\nWe really liked your profile and would love to collaborate with you.';
+
+          if (templateId === 'template1' && stored.autoDmTemplate1) {
+            template = stored.autoDmTemplate1;
+          } else if (templateId === 'template2' && stored.autoDmTemplate2) {
+            template = stored.autoDmTemplate2;
+          } else if (templateId === 'template3' && stored.autoDmTemplate3) {
+            template = stored.autoDmTemplate3;
+          }
+
+          const message = template.replace('{{creator_name}}', currentCreatorData.creator_name || currentCreatorData.username);
+          await navigator.clipboard.writeText(message);
+
+          // Show copied confirmation on the button
+          const clickedBtn = e.target.closest('.scout-template-btn');
+          const originalText = clickedBtn.textContent;
+          clickedBtn.textContent = '✓';
+          clickedBtn.style.background = 'rgba(34, 197, 94, 0.3)';
+
+          setTimeout(() => {
+            clickedBtn.textContent = originalText;
+            clickedBtn.style.background = '';
+          }, 1500);
+        } catch (error) {
+          console.error('Error copying template:', error);
+        }
       });
     });
   });
