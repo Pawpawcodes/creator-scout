@@ -890,21 +890,24 @@ const WIDGET_STYLES = `
     }
 
     .scout-template-btn {
-      width: 18px;
-      height: 18px;
-      padding: 0;
+      width: fit-content;
+      min-width: 22px;
+      max-width: 65px;
+      padding: 2px 4px;
       background: rgba(255, 255, 255, 0.08);
       color: rgba(196, 181, 253, 0.8);
       border: 1px solid rgba(124, 58, 237, 0.2);
       border-radius: 8px;
-      font-size: 7px;
+      font-size: 8px;
       font-weight: 700;
       cursor: pointer;
-      transition: all 0.2s ease;
       transition: all 0.2s ease;
       display: flex;
       align-items: center;
       justify-content: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .scout-template-btn:hover {
@@ -1317,9 +1320,12 @@ function showWidgetPopup(status, message) {
       popup.querySelectorAll('.scout-template-btn').forEach((btn) => {
         const templateId = btn.dataset.template;
         const label = btn.querySelector('.scout-template-label');
+        const templateName = templateNames[templateId] || templateId.replace('template', '');
         if (label) {
-          label.textContent = templateNames[templateId] || templateId.replace('template', '');
+          label.textContent = templateName;
         }
+        // Update title for hover tooltip
+        btn.title = templateName;
       });
     });
 
