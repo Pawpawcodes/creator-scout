@@ -369,6 +369,7 @@ const WIDGET_STYLES = `
       margin-bottom: 2px;
       align-items: center;
       margin-top: 2px;
+      justify-content: center;
     }
 
     .scout-status-button-group {
@@ -466,7 +467,7 @@ const WIDGET_STYLES = `
 
     .scout-workflow-btn {
       flex: 1;
-      padding: 4px 8px;
+      padding: 3px 8px;
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 16px;
       font-size: 9px;
@@ -478,7 +479,7 @@ const WIDGET_STYLES = `
       letter-spacing: 0.1px;
       background: rgba(255, 255, 255, 0.08);
       color: rgba(255, 255, 255, 0.8);
-      min-height: 28px;
+      min-height: 24px;
       display: flex;
       align-items: center;
       justify-content: center;
