@@ -1587,7 +1587,7 @@ async function renderCompactNotes() {
       await updateCacheFromStorage();
     }
     await saveNote(note);
-    renderCompactNotes();
+    await renderCompactNotes();
   });
 }
 
@@ -2068,7 +2068,7 @@ function showLockInPriceInputWithValue(currentPrice) {
       <label style="font-size: 9px; font-weight: 600; color: rgba(255,255,255,0.75); display: block; margin-bottom: 4px;">PRICE</label>
       <div style="display: flex; gap: 4px; align-items: center;">
         <input type="text" class="scout-price-input" placeholder="$" value="${currentPrice}" style="flex: 1; padding: 4px 6px; border: 1px solid rgba(124, 58, 237, 0.25); border-radius: 8px; font-size: 9px; background: rgba(255,255,255,0.08); color: #ffffff;" autocomplete="off">
-        <button class="scout-price-save-btn" style="padding: 4px 8px; background: #2563eb; color: white; border: none; border-radius: 14px; font-size: 8px; font-weight: 700; cursor: pointer; flex-shrink: 0;">✓</button>
+        <button class="scout-price-save-btn" style="padding: 4px 8px; background: #22c55e; color: white; border: none; border-radius: 14px; font-size: 8px; font-weight: 700; cursor: pointer; flex-shrink: 0;">✓</button>
       </div>
     </div>
   `;
