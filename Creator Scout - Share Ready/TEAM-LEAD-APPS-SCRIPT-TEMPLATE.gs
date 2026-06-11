@@ -665,9 +665,9 @@ function handleUpdateNotes(email, profile_url, notes, personalSheetId) {
       return { error: 'Creator not found', status: 'error', success: false };
     }
 
-    // Update Notes column (column 9, index 8)
-    console.log(`[UPDATE NOTES] Updating Master row ${foundRow}, column 9 with ${notes.length} characters`);
-    masterSheet.getRange(foundRow, 9).setValue(notes);
+    // Update Notes column (column 8 - same as Personal Sheet)
+    console.log(`[UPDATE NOTES] Updating Master row ${foundRow}, column 8 with ${notes.length} characters`);
+    masterSheet.getRange(foundRow, 8).setValue(notes);
     console.log(`[UPDATE NOTES] Master sheet updated successfully`);
 
     // Update personal sheet if provided (EXACTLY like Price does)
@@ -681,8 +681,8 @@ function handleUpdateNotes(email, profile_url, notes, personalSheetId) {
           for (let i = 1; i < personalData.length; i++) {
             // Use column 1 lookup (same as Price) - Personal Sheet has different structure than Master
             if (personalData[i][0] === profile_url) {
-              // Update Notes column (column 9, index 8) in personal sheet
-              personalMasterSheet.getRange(i + 1, 9).setValue(notes);
+              // Update Notes column (column 8 - same as Master Sheet)
+              personalMasterSheet.getRange(i + 1, 8).setValue(notes);
               break;
             }
           }
