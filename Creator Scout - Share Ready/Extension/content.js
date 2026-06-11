@@ -367,7 +367,7 @@ const WIDGET_STYLES = `
       flex-direction: row;
       gap: 4px;
       margin-bottom: 2px;
-      align-items: stretch;
+      align-items: center;
       margin-top: 2px;
     }
 
@@ -382,7 +382,6 @@ const WIDGET_STYLES = `
     }
 
     .scout-action-btn {
-      flex: 1;
       padding: 4px 10px;
       background: rgba(124, 58, 237, 0.2);
       color: rgba(255, 255, 255, 0.9);
@@ -879,7 +878,6 @@ const WIDGET_STYLES = `
     .scout-template-switcher {
       display: flex;
       gap: 2px;
-      justify-content: center;
       margin-bottom: 0;
       margin-top: 0;
     }
@@ -1296,13 +1294,13 @@ function showWidgetPopup(status, message) {
       </div>
       <div class="scout-popup-actions">
         <button class="scout-action-btn scout-dm-btn">
-          Copy Message
+          Copy
         </button>
-      </div>
-      <div class="scout-template-switcher">
-        <button type="button" class="scout-template-btn ${activeTemplate === 'template1' ? 'active' : ''}" data-template="template1" title="Template 1"><span class="scout-template-label">1</span></button>
-        <button type="button" class="scout-template-btn ${activeTemplate === 'template2' ? 'active' : ''}" data-template="template2" title="Template 2"><span class="scout-template-label">2</span></button>
-        <button type="button" class="scout-template-btn ${activeTemplate === 'template3' ? 'active' : ''}" data-template="template3" title="Template 3"><span class="scout-template-label">3</span></button>
+        <div class="scout-template-switcher">
+          <button type="button" class="scout-template-btn ${activeTemplate === 'template1' ? 'active' : ''}" data-template="template1" title="Template 1"><span class="scout-template-label">1</span></button>
+          <button type="button" class="scout-template-btn ${activeTemplate === 'template2' ? 'active' : ''}" data-template="template2" title="Template 2"><span class="scout-template-label">2</span></button>
+          <button type="button" class="scout-template-btn ${activeTemplate === 'template3' ? 'active' : ''}" data-template="template3" title="Template 3"><span class="scout-template-label">3</span></button>
+        </div>
       </div>
     `;
 
