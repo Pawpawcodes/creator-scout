@@ -1583,50 +1583,56 @@ async function renderCompactNotes() {
 
   saveBtn.addEventListener('click', async () => {
     const note = input.value.trim();
-    if (!cachedSettings.SCOUT_EMAIL) {
-      await updateCacheFromStorage();
-    }
-    await saveNote(note);
-    await renderCompactNotes();
+    await handleNoteSave(note);
   });
 }
 
-// Save note to cache and GAS
-async function saveNote(noteText) {
-  if (!currentCreatorData || !currentCreatorData.profile_url) {
-    console.error('[NOTES] Missing creator data');
-    return;
-  }
+// Save note using EXACT SAME flow as Price (direct fetch to GAS)
+async function handleNoteSave(noteText) {
+  try {
+    if (!currentCreatorData || !currentCreatorData.profile_url) {
+      throw new Error('Creator data not loaded');
+    }
 
-  console.log('[NOTES] Saving note:', { profile_url: currentCreatorData.profile_url, length: noteText.length });
+    // PERFORMANCE: Optimistic UI update - show note immediately
+    renderCompactNotes();
+    showSaveMessage('✓ Note saved', 'success');
 
-  // Save to local cache (WAIT for write to complete)
-  const stored = await new Promise(resolve => {
-    chrome.storage.local.get(['CREATOR_NOTES_CACHE'], resolve);
-  });
-  const notesCache = stored.CREATOR_NOTES_CACHE || {};
-  notesCache[currentCreatorData.profile_url] = noteText;
-
-  // CRITICAL: Wait for cache write to complete before proceeding
-  await new Promise(resolve => {
-    chrome.storage.local.set({ CREATOR_NOTES_CACHE: notesCache }, resolve);
-  });
-  console.log('[NOTES] Saved to local cache');
-
-  // Send to GAS
-  if (cachedSettings.SCOUT_EMAIL) {
-    chrome.runtime.sendMessage({
-      action: 'updateNotes',
-      email: cachedSettings.SCOUT_EMAIL,
-      profile_url: currentCreatorData.profile_url,
-      notes: noteText,
-      personalSheetId: cachedSettings.PERSONAL_SHEET_ID
-    }, (response) => {
-      console.log('[NOTES] GAS response:', response);
-      if (response && response.success) {
-        console.log('[NOTES] GAS save successful');
-      }
+    const stored = await new Promise(resolve => {
+      chrome.storage.local.get(['SCOUT_EMAIL', 'PERSONAL_SHEET_ID'], resolve);
     });
+
+    if (!stored.SCOUT_EMAIL) {
+      throw new Error('Configuration not loaded');
+    }
+
+    // Save to GAS in background (same pattern as Price) - direct fetch, not message passing
+    const url = new URL(cachedSettings.GAS_URL);
+    url.searchParams.append('action', 'updateNotes');
+    url.searchParams.append('email', stored.SCOUT_EMAIL);
+    url.searchParams.append('profile_url', currentCreatorData.profile_url);
+    url.searchParams.append('notes', noteText);
+
+    if (stored.PERSONAL_SHEET_ID) {
+      url.searchParams.append('personal_sheet_id', stored.PERSONAL_SHEET_ID);
+    }
+
+    const response = await fetch(url.toString());
+    const result = await response.json();
+
+    if (result.success || result.status === 'success') {
+      // Cache note client-side (same as Price)
+      chrome.storage.local.get(['CREATOR_NOTES_CACHE'], (res) => {
+        const cachedNotes = res.CREATOR_NOTES_CACHE || {};
+        cachedNotes[currentCreatorData.profile_url] = noteText;
+        chrome.storage.local.set({ CREATOR_NOTES_CACHE: cachedNotes });
+      });
+    } else {
+      throw new Error(result.error || 'Failed to save note');
+    }
+  } catch (error) {
+    console.error('Error saving note:', error);
+    showSaveMessage('Error saving note: ' + error.message, 'error');
   }
 }
 
