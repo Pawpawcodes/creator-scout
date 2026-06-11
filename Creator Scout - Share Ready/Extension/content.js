@@ -2086,7 +2086,7 @@ function showLockInPriceInput() {
   section.className = 'scout-lock-price-section';
   section.innerHTML = `
     <div style="display: flex; gap: 4px; align-items: center;">
-      <input type="text" class="scout-price-input" placeholder="$" style="flex: 1; padding: 4px 6px; border: 1px solid rgba(124, 58, 237, 0.25); border-radius: 8px; font-size: 9px; background: rgba(255, 255, 255, 0.08); color: #ffffff; font-family: inherit;" autocomplete="off">
+      <input type="text" class="scout-price-input" placeholder="Add Price" style="flex: 1; padding: 4px 6px; border: 1px solid rgba(124, 58, 237, 0.25); border-radius: 8px; font-size: 9px; background: rgba(255, 255, 255, 0.08); color: #ffffff; font-family: inherit;" autocomplete="off">
       <button class="scout-price-save-btn" style="padding: 2px 6px; background: #22c55e; color: white; border: none; border-radius: 12px; font-size: 8px; font-weight: 700; cursor: pointer; flex-shrink: 0;">✓</button>
     </div>
   `;
