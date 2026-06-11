@@ -881,8 +881,8 @@ const WIDGET_STYLES = `
       display: flex;
       gap: 2px;
       justify-content: center;
-      margin-bottom: 2px;
-      margin-top: 2px;
+      margin-bottom: 0;
+      margin-top: 0;
     }
 
     .scout-template-btn {
