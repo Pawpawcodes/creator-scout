@@ -1431,12 +1431,17 @@ function showWidgetPopup(status, message) {
         popup.style.pointerEvents = 'none';
         popup.style.opacity = '0.9';
 
-        // Clear from local cache immediately
-        chrome.storage.local.get(['CREATOR_STATUS_CACHE'], (result) => {
-          const cache = result.CREATOR_STATUS_CACHE || {};
-          delete cache[profileUrl];
-          chrome.storage.local.set({ CREATOR_STATUS_CACHE: cache });
-          console.log('[DELETE-POPUP] Local cache cleared');
+        // Clear from local cache immediately (both status and notes)
+        chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_NOTES_CACHE'], (result) => {
+          const statusCache = result.CREATOR_STATUS_CACHE || {};
+          const notesCache = result.CREATOR_NOTES_CACHE || {};
+          delete statusCache[profileUrl];
+          delete notesCache[profileUrl];
+          chrome.storage.local.set({
+            CREATOR_STATUS_CACHE: statusCache,
+            CREATOR_NOTES_CACHE: notesCache
+          });
+          console.log('[DELETE-POPUP] Local cache cleared (status + notes)');
         });
 
         // Update state immediately
@@ -1595,13 +1600,17 @@ async function saveNote(noteText) {
 
   console.log('[NOTES] Saving note:', { profile_url: currentCreatorData.profile_url, length: noteText.length });
 
-  // Save to local cache
+  // Save to local cache (WAIT for write to complete)
   const stored = await new Promise(resolve => {
     chrome.storage.local.get(['CREATOR_NOTES_CACHE'], resolve);
   });
   const notesCache = stored.CREATOR_NOTES_CACHE || {};
   notesCache[currentCreatorData.profile_url] = noteText;
-  chrome.storage.local.set({ CREATOR_NOTES_CACHE: notesCache });
+
+  // CRITICAL: Wait for cache write to complete before proceeding
+  await new Promise(resolve => {
+    chrome.storage.local.set({ CREATOR_NOTES_CACHE: notesCache }, resolve);
+  });
   console.log('[NOTES] Saved to local cache');
 
   // Send to GAS
@@ -1733,12 +1742,17 @@ async function handleDeleteCreatorGlobal() {
     currentCreatorData = null;
     currentStatus = 'new';
 
-    // Clear from local cache immediately
-    chrome.storage.local.get(['CREATOR_STATUS_CACHE'], (result) => {
-      const cache = result.CREATOR_STATUS_CACHE || {};
-      delete cache[profileUrl];
-      chrome.storage.local.set({ CREATOR_STATUS_CACHE: cache });
-      console.log('[DELETE] Local cache cleared');
+    // Clear from local cache immediately (both status and notes)
+    chrome.storage.local.get(['CREATOR_STATUS_CACHE', 'CREATOR_NOTES_CACHE'], (result) => {
+      const statusCache = result.CREATOR_STATUS_CACHE || {};
+      const notesCache = result.CREATOR_NOTES_CACHE || {};
+      delete statusCache[profileUrl];
+      delete notesCache[profileUrl];
+      chrome.storage.local.set({
+        CREATOR_STATUS_CACHE: statusCache,
+        CREATOR_NOTES_CACHE: notesCache
+      });
+      console.log('[DELETE] Local cache cleared (status + notes)');
     });
 
     // Close the widget immediately for visual feedback
