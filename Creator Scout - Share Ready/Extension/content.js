@@ -291,9 +291,10 @@ const WIDGET_STYLES = `
 
     .scout-popup-header {
       display: flex;
-      justify-content: space-between;
+      justify-content: center;
       align-items: center;
       margin-bottom: 1px;
+      position: relative;
     }
 
     .scout-popup-title {
@@ -315,6 +316,8 @@ const WIDGET_STYLES = `
       display: flex;
       align-items: center;
       justify-content: center;
+      position: absolute;
+      right: 0;
     }
 
     .scout-popup-close:hover {
@@ -468,7 +471,7 @@ const WIDGET_STYLES = `
     }
 
     .scout-workflow-btn {
-      padding: 2px 6px;
+      padding: 2px 4px;
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 16px;
       font-size: 9px;
