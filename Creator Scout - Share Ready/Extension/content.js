@@ -250,7 +250,7 @@ const WIDGET_STYLES = `
       -webkit-backdrop-filter: blur(14px);
       border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 16px;
-      padding: 3px 6px;
+      padding: 3px 3px;
       max-width: 220px;
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
       animation: popupFadeScale 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -466,6 +466,8 @@ const WIDGET_STYLES = `
       gap: 4px;
       width: 100%;
       margin-bottom: 1px;
+      margin-left: 2px;
+      margin-right: 2px;
       flex-wrap: wrap;
       justify-content: center;
     }
@@ -535,6 +537,13 @@ const WIDGET_STYLES = `
     .scout-notes-section {
       margin-top: 0;
       padding-top: 0;
+      margin-left: 2px;
+      margin-right: 2px;
+    }
+
+    .scout-lock-price-section {
+      margin-left: 2px;
+      margin-right: 2px;
     }
 
     .scout-notes-box {
